@@ -1,0 +1,14 @@
+devtoolset-14
+devtoolset-14-runtime
+devtoolset-14-toolchain
+devtoolset-14-binutils
+devtoolset-14-gcc
+devtoolset-14-gcc-c++
+devtoolset-14-gcc-gfortran
+devtoolset-14-gdb
+devtoolset-14-libasan
+devtoolset-14-libasan-devel
+devtoolset-14-libubsan
+devtoolset-14-libubsan-devel
+devtoolset-14-gcc-plugin-annobin
+devtoolset-14-dwz

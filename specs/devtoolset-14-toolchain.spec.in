@@ -1,0 +1,31 @@
+Name:           @TOOLSET@-toolchain
+Version:        14.0
+Release:        1%{?dist}
+Summary:        Core compiler toolchain for @TOOLSET@
+License:        GPLv3+
+BuildArch:      noarch
+Requires:       @TOOLSET@ = %{version}-%{release}
+Requires:       @TOOLSET@-runtime = %{version}-%{release}
+Requires:       @TOOLSET@-binutils
+Requires:       @TOOLSET@-gcc
+Requires:       @TOOLSET@-gcc-c++
+Requires:       @TOOLSET@-gcc-gfortran
+Requires:       @TOOLSET@-gdb
+Requires:       @TOOLSET@-dwz
+Requires:       libasan8
+Requires:       @TOOLSET@-libasan-devel
+Requires:       libubsan1
+Requires:       @TOOLSET@-libubsan-devel
+
+%description
+Core compiler toolchain meta package for @TOOLSET@.
+
+This first-stage toolchain explicitly includes the ASan and UBSan runtime and
+development packages. Annobin is intentionally excluded until its EL7
+dependency chain is closed.
+
+%files
+
+%changelog
+* Fri Mar 27 2026 Codex <codex@example.invalid> - 14.0-1
+- Initial toolchain meta package scaffold for @TOOLSET@

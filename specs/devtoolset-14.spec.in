@@ -1,0 +1,16 @@
+Name:           @TOOLSET@
+Version:        14.0
+Release:        1%{?dist}
+Summary:        Meta package for @TOOLSET@
+License:        GPLv3+
+BuildArch:      noarch
+Requires:       @TOOLSET@-runtime = %{version}-%{release}
+
+%description
+Meta package for the @TOOLSET@ Software Collection on CentOS 7.
+
+%files
+
+%changelog
+* Fri Mar 27 2026 Codex <codex@example.invalid> - 14.0-1
+- Initial meta package scaffold for @TOOLSET@

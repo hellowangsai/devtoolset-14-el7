@@ -1,0 +1,7 @@
+# Core Rocky 8 gcc-toolset-14 source RPMs to import.
+gcc-toolset-14
+gcc-toolset-14-annobin
+gcc-toolset-14-binutils
+gcc-toolset-14-dwz
+gcc-toolset-14-gcc
+gcc-toolset-14-gdb
