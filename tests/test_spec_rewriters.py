@@ -425,6 +425,7 @@ class RewriteSpecTest(unittest.TestCase):
                 [
                     "%global _python_bytecompile_extra 0",
                     "BuildRequires: %{?scl_prefix}gcc-c++",
+                    "BuildRequires: libbabeltrace-devel%{buildisa}",
                     "BuildRequires: expat-devel%{buildisa}",
                     "BuildRequires: cmake",
                     "BuildRequires: source-highlight-devel",
@@ -432,7 +433,7 @@ class RewriteSpecTest(unittest.TestCase):
                     "BuildRequires: elfutils-debuginfod-client-devel",
                     "BuildRequires: texinfo-tex",
                     "BuildRequires: texlive-collection-latexrecommended",
-                    "%global have_libipt 1",
+                    "%global have_libipt 0",
                     "%global have_debuginfod 1",
                     "%global use_scl_for_debuginfod 1",
                     "This package provides INFO, HTML and PDF user manual for GDB.",
@@ -442,8 +443,33 @@ class RewriteSpecTest(unittest.TestCase):
                     'cd %{gdb_build}$fprofile',
                     '',
                     'export CFLAGS="$RPM_OPT_FLAGS %{?_with_asan:-fsanitize=address}"',
+                    "%if 0%{have_libipt} && 0%{?el7:1} && 0%{?scl:1}",
+                    "(",
+                    " mkdir libipt-%{libipt_version}-root",
+                    " mkdir libipt-%{libipt_version}-build",
+                    " cd    libipt-%{libipt_version}-build",
+                    " # -DPTUNIT:BOOL=ON has no effect on ctest.",
+                    " %cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \\",
+                    "\t-DPTUNIT:BOOL=OFF \\",
+                    "\t-DDEVBUILD:BOOL=ON \\",
+                    "\t-DBUILD_SHARED_LIBS=OFF \\",
+                    "\t../../libipt-%{libipt_version}",
+                    " make VERBOSE=1 %{?_smp_mflags}",
+                    " ctest -V %{?_smp_mflags}",
+                    " make install DESTDIR=../libipt-%{libipt_version}-root",
+                    "%endif",
                     'GDB_FULL_CONFIGURE_FLAGS="\\',
+                    '%if 0%{!?rhel:1} || 0%{?rhel} > 7',
+                    '\t--with-babeltrace \\',
+                    '%else',
+                    '\t--without-babeltrace \\',
+                    '%endif',
                     '\t--with-expat \\',
+                    '%if %{have_libipt}',
+                    '\t--with-intel-pt \\',
+                    '%else',
+                    '\t--without-intel-pt \\',
+                    '%endif',
                     '\t--enable-unit-tests"',
                     "%make_build \\",
                     "     -C gdb/doc {gdb,annotate}{.info,/index.html,.pdf} MAKEHTMLFLAGS=--no-split MAKEINFOFLAGS=--no-split V=1",
@@ -451,23 +477,30 @@ class RewriteSpecTest(unittest.TestCase):
                 ]
             )
         )
-        self.assertIn("%global _without_python 1", rendered)
+        self.assertNotIn("%global _without_python 1", rendered)
         self.assertIn("BuildRequires: devtoolset-11-gcc-c++", rendered)
-        self.assertNotIn("BuildRequires: expat-devel%{buildisa}", rendered)
-        self.assertNotIn("BuildRequires: cmake", rendered)
+        self.assertNotIn("BuildRequires: libbabeltrace-devel%{buildisa}", rendered)
+        self.assertIn("BuildRequires: expat-devel%{buildisa}", rendered)
+        self.assertIn("BuildRequires: cmake", rendered)
         self.assertNotIn("BuildRequires: source-highlight-devel", rendered)
         self.assertNotIn("BuildRequires: boost-devel", rendered)
         self.assertNotIn("BuildRequires: elfutils-debuginfod-client-devel", rendered)
         self.assertNotIn("BuildRequires: texinfo-tex", rendered)
         self.assertNotIn("BuildRequires: texlive-collection-latexrecommended", rendered)
-        self.assertIn("%global have_libipt 0", rendered)
+        self.assertIn("%global have_libipt 1", rendered)
         self.assertIn("%global have_debuginfod 0", rendered)
         self.assertIn("%global use_scl_for_debuginfod 0", rendered)
-        self.assertIn("--without-expat", rendered)
+        self.assertIn("--without-babeltrace", rendered)
+        self.assertIn("--with-expat", rendered)
+        self.assertIn("--with-intel-pt", rendered)
         self.assertIn("--disable-source-highlight", rendered)
         self.assertIn("export CC=/opt/rh/devtoolset-11/root/usr/bin/gcc", rendered)
         self.assertIn("export CXX=/opt/rh/devtoolset-11/root/usr/bin/g++", rendered)
         self.assertIn("export RANLIB=/opt/rh/devtoolset-11/root/usr/bin/gcc-ranlib", rendered)
+        self.assertIn("CMAKE_BIN=$(command -v cmake || command -v cmake3)", rendered)
+        self.assertIn("CTEST_BIN=$(command -v ctest || command -v ctest3)", rendered)
+        self.assertIn("\"$CMAKE_BIN\" -DCMAKE_BUILD_TYPE=RelWithDebInfo", rendered)
+        self.assertIn("\"$CTEST_BIN\" -V %{?_smp_mflags}", rendered)
         self.assertIn("This package provides the INFO user manual for GDB.", rendered)
         self.assertNotIn("{gdb,annotate}.{html,pdf}", rendered)
         self.assertIn(
@@ -475,6 +508,62 @@ class RewriteSpecTest(unittest.TestCase):
             rendered,
         )
         self.assertIn("Name: devtoolset-14-gdb", rendered)
+
+    def test_gdb_rewrite_uses_python3_for_el7_python_support(self):
+        rendered = rewrite_gdb(
+            "\n".join(
+                [
+                    "%global _python_bytecompile_extra 0",
+                    "%if 0%{?rhel:1} && 0%{?rhel} <= 7",
+                    "BuildRequires: python-devel%{buildisa}",
+                    "%global __python /usr/bin/python2",
+                    "%else",
+                    "%global __python %{__python3}",
+                    "BuildRequires: python3-devel%{buildisa}",
+                    "%endif",
+                    "%if 0%{!?_without_python:1}",
+                    "\t--with-python=%{__python} \\",
+                    "%else",
+                    "\t--without-python \\",
+                    "%endif",
+                ]
+            )
+        )
+        self.assertNotIn("BuildRequires: python-devel%{buildisa}", rendered)
+        self.assertIn("BuildRequires: python3-devel%{buildisa}", rendered)
+        self.assertNotIn("%global __python /usr/bin/python2", rendered)
+        self.assertIn("%global __python %{__python3}", rendered)
+        self.assertIn("%global __os_install_post %{expand:", rendered)
+        self.assertIn("/usr/lib/rpm/brp-scl-python-bytecompile %{__python3}", rendered)
+        self.assertIn("--with-python=%{__python}", rendered)
+
+    def test_gdb_rewrite_uses_python3_for_scl_bytecompile(self):
+        rendered = rewrite_gdb(
+            "\n".join(
+                [
+                    "%global _python_bytecompile_extra 0",
+                ]
+            )
+        )
+        self.assertIn("%global __os_install_post %{expand:", rendered)
+        self.assertIn("/usr/lib/rpm/brp-scl-python-bytecompile %{__python3}", rendered)
+
+    def test_gdb_rewrite_removes_system_gdbinit_tree_recursively(self):
+        rendered = rewrite_gdb(
+            "rm -f $RPM_BUILD_ROOT%{_datadir}/gdb/system-gdbinit/elinos.py\n"
+            "rm -f $RPM_BUILD_ROOT%{_datadir}/gdb/system-gdbinit/wrs-linux.py\n"
+            "rmdir $RPM_BUILD_ROOT%{_datadir}/gdb/system-gdbinit\n"
+        )
+        self.assertIn("rm -rf $RPM_BUILD_ROOT%{_datadir}/gdb/system-gdbinit", rendered)
+        self.assertNotIn("rmdir $RPM_BUILD_ROOT%{_datadir}/gdb/system-gdbinit", rendered)
+
+    def test_gdb_rewrite_drops_dap_python_tree_for_el7(self):
+        rendered = rewrite_gdb(
+            'for i in `find $RPM_BUILD_ROOT%{_datadir}/gdb -name "*.py"`; do\n'
+            "  touch -r $RPM_BUILD_DIR/%{gdb_src}/gdb/version.in $i\n"
+            "done\n"
+        )
+        self.assertIn("rm -rf $RPM_BUILD_ROOT%{_datadir}/gdb/python/gdb/dap", rendered)
 
 
 if __name__ == "__main__":

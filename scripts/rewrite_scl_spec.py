@@ -346,30 +346,90 @@ def rewrite_binutils(text):
 
 
 def rewrite_gdb(text):
+    python3_scl_install_post = (
+        "%global __os_install_post %{expand:\n"
+        "    /usr/lib/rpm/brp-scl-compress %{_scl_root}\n"
+        "    %{!?__debug_package:/usr/lib/rpm/brp-strip %{__strip}\n"
+        "    /usr/lib/rpm/brp-strip-comment-note %{__strip} %{__objdump}\n"
+        "    }\n"
+        "    /usr/lib/rpm/brp-strip-static-archive %{__strip}\n"
+        "    /usr/lib/rpm/brp-scl-python-bytecompile %{__python3} %{?_python_bytecompile_errors_terminate_build} %{_scl_root}\n"
+        "    /usr/lib/rpm/brp-python-hardlink\n"
+        "    %{!?__jar_repack:/usr/lib/rpm/redhat/brp-java-repack-jars}\n"
+        "%{nil}}"
+    )
     text = rewrite_generic(text)
-    if "%global _without_python 1" not in text:
-        text = text.replace(
-            "%global _python_bytecompile_extra 0",
-            "%global _python_bytecompile_extra 0\n%global _without_python 1",
-            1,
-        )
+    text = text.replace("%global _without_python 1\n", "")
+    text = text.replace(
+        "%if 0%{?rhel:1} && 0%{?rhel} <= 7\n"
+        "BuildRequires: python-devel%{buildisa}\n"
+        "%global __python /usr/bin/python2\n"
+        "%else\n"
+        "%global __python %{__python3}\n"
+        "BuildRequires: python3-devel%{buildisa}\n"
+        "%endif\n",
+        "%global __python %{__python3}\n"
+        "BuildRequires: python3-devel%{buildisa}\n",
+        1,
+    )
+    text = text.replace(python3_scl_install_post + "\n", "")
+    text = text.replace(
+        "%global _python_bytecompile_extra 0",
+        "%global _python_bytecompile_extra 0\n" + python3_scl_install_post,
+        1,
+    )
     text = text.replace(
         "BuildRequires: %{?scl_prefix}gcc-c++",
         "BuildRequires: {}gcc-c++".format(TARGET_BOOTSTRAP_TOOLSET + "-"),
     )
-    text = text.replace("BuildRequires: expat-devel%{buildisa}\n", "")
-    text = text.replace("BuildRequires: cmake\n", "")
-    text = text.replace("BuildRequires: source-highlight-devel\n", "")
+    text = text.replace(
+        "%{!?scl:\n"
+        " %global pkg_name %{name}\n"
+        " %global _root_prefix %{_prefix}\n"
+        " %global _root_datadir %{_datadir}\n"
+        " %global _root_libdir %{_libdir}\n"
+        "}\n",
+        "%{!?scl:\n"
+        " %global pkg_name %{name}\n"
+        " %global _root_prefix %{_prefix}\n"
+        " %global _root_datadir %{_datadir}\n"
+        " %global _root_libdir %{_libdir}\n"
+        "}\n\n"
+        + python3_scl_install_post
+        + "\n",
+        1,
+    )
     text = text.replace("BuildRequires: boost-devel\n", "")
+    text = text.replace("BuildRequires: source-highlight-devel\n", "")
     text = text.replace("BuildRequires: elfutils-debuginfod-client-devel\n", "")
     text = text.replace("BuildRequires: texinfo-tex\n", "")
     text = text.replace("BuildRequires: texlive-collection-latexrecommended\n", "")
-    text = text.replace("%global have_libipt 1", "%global have_libipt 0")
+    text = text.replace("%global have_libipt 0", "%global have_libipt 1", 2)
     text = text.replace("%global have_debuginfod 1", "%global have_debuginfod 0")
     text = text.replace(
         "%global use_scl_for_debuginfod 1", "%global use_scl_for_debuginfod 0"
     )
-    text = text.replace("--with-expat", "--without-expat")
+    text = re.sub(
+        r"%if 0%\{\!?rhel:1\} \|\| 0%\{\?rhel\} > 7\n"
+        r"BuildRequires: libbabeltrace-devel%\{buildisa\}\n"
+        r"(?:    %if %\{defined use_guile\}\n"
+        r"(?:        .*\n)*?"
+        r"    %endif\n)?"
+        r"%endif\n",
+        "",
+        text,
+        count=1,
+    )
+    text = text.replace("BuildRequires: libbabeltrace-devel%{buildisa}\n", "")
+    text = text.replace(
+        "%if 0%{!?rhel:1} || 0%{?rhel} > 7\n"
+        "\t--with-babeltrace\t\t\t\t\t\\\n"
+        "%else\n"
+        "\t--without-babeltrace\t\t\t\t\t\\\n"
+        "%endif\n",
+        "\t--without-babeltrace\t\t\t\t\t\\\n",
+        1,
+    )
     text = text.replace(
         "%make_build \\\n     -C gdb/doc {gdb,annotate}{.info,/index.html,.pdf} MAKEHTMLFLAGS=--no-split MAKEINFOFLAGS=--no-split V=1",
         "%make_build \\\n     -C gdb/doc {gdb,annotate}.info MAKEINFOFLAGS=--no-split V=1",
@@ -379,6 +439,46 @@ def rewrite_gdb(text):
         "This package provides the INFO user manual for GDB.",
     )
     text = text.replace("%doc %{gdb_build}/gdb/doc/{gdb,annotate}.{html,pdf}\n", "")
+    text = text.replace(
+        "rm -f $RPM_BUILD_ROOT%{_datadir}/gdb/system-gdbinit/elinos.py\n"
+        "rm -f $RPM_BUILD_ROOT%{_datadir}/gdb/system-gdbinit/wrs-linux.py\n"
+        "rmdir $RPM_BUILD_ROOT%{_datadir}/gdb/system-gdbinit\n",
+        "rm -rf $RPM_BUILD_ROOT%{_datadir}/gdb/system-gdbinit\n",
+        1,
+    )
+    text = text.replace(
+        "for i in `find $RPM_BUILD_ROOT%{_datadir}/gdb -name \"*.py\"`; do\n",
+        "rm -rf $RPM_BUILD_ROOT%{_datadir}/gdb/python/gdb/dap\n"
+        "for i in `find $RPM_BUILD_ROOT%{_datadir}/gdb -name \"*.py\"`; do\n",
+        1,
+    )
+    text = text.replace(
+        " # -DPTUNIT:BOOL=ON has no effect on ctest.\n"
+        " %cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \\\n"
+        "\t-DPTUNIT:BOOL=OFF \\\n"
+        "\t-DDEVBUILD:BOOL=ON \\\n"
+        "\t-DBUILD_SHARED_LIBS=OFF \\\n"
+        "\t../../libipt-%{libipt_version}\n",
+        " # -DPTUNIT:BOOL=ON has no effect on ctest.\n"
+        " CMAKE_BIN=$(command -v cmake || command -v cmake3)\n"
+        " CTEST_BIN=$(command -v ctest || command -v ctest3)\n"
+        " test -n \"$CMAKE_BIN\"\n"
+        " test -n \"$CTEST_BIN\"\n"
+        " \"$CMAKE_BIN\" -DCMAKE_BUILD_TYPE=RelWithDebInfo \\\n"
+        "\t-DPTUNIT:BOOL=OFF \\\n"
+        "\t-DDEVBUILD:BOOL=ON \\\n"
+        "\t-DBUILD_SHARED_LIBS=OFF \\\n"
+        "\t-DCMAKE_INSTALL_PREFIX=%{_prefix} \\\n"
+        "\t-DCMAKE_INSTALL_LIBDIR=%{_libdir} \\\n"
+        "\t-DCMAKE_INSTALL_INCLUDEDIR=%{_includedir} \\\n"
+        "\t../../libipt-%{libipt_version}\n",
+        1,
+    )
+    text = text.replace(
+        " make VERBOSE=1 %{?_smp_mflags}\n ctest -V %{?_smp_mflags}\n make install DESTDIR=../libipt-%{libipt_version}-root\n",
+        " make VERBOSE=1 %{?_smp_mflags}\n \"$CTEST_BIN\" -V %{?_smp_mflags}\n make install DESTDIR=../libipt-%{libipt_version}-root\n",
+        1,
+    )
     for old in (
         "# Populate CFLAGS, LDFLAGS, CC, CXX, etc.\n%set_build_flags\n",
         'cd %{gdb_build}$fprofile\n\nexport CFLAGS="$RPM_OPT_FLAGS %{?_with_asan:-fsanitize=address}"\n',
