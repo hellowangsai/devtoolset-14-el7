@@ -21,13 +21,17 @@ GCC_MACRO_BLOCK = """\
 %global devtoolset14_target x86_64-redhat-linux
 %global devtoolset14_languages c,c++,fortran
 %global devtoolset14_disable_multilib 1
-%global devtoolset14_disable_tsan 1
+%global devtoolset14_disable_tsan 0
 %global devtoolset14_keep_asan 1
 %global devtoolset14_keep_ubsan 1
 
 """
 EL7_LIBSTDCXX_PATCH = "gcc14-libstdc++-compat-el7.patch"
 EL7_LIBSTDCXX_PATCH_NUMBER = 1002
+EL7_TLS_DTOR_XFAIL_PATCH = (
+    "0019-XFAIL-thread_local-order2-when-TLS-dtor-order-is-not-correct.patch"
+)
+EL7_TLS_DTOR_XFAIL_PATCH_NUMBER = 3019
 SET_BUILD_FLAGS_FALLBACK = """\
 %{!?set_build_flags:%global set_build_flags CFLAGS="${CFLAGS:-%{optflags}}"; CXXFLAGS="${CXXFLAGS:-%{optflags}}"; FFLAGS="${FFLAGS:-%{optflags}}"; FCFLAGS="${FCFLAGS:-%{optflags}}"; LDFLAGS="${LDFLAGS:-%{?__global_ldflags}}"; export CFLAGS CXXFLAGS FFLAGS FCFLAGS LDFLAGS}
 
@@ -147,8 +151,8 @@ def rewrite_gcc(text):
         ("build_d", 0),
         ("build_m2", 0),
         ("build_libhwasan", 0),
-        ("build_liblsan", 0),
-        ("build_libtsan", 0),
+        ("build_liblsan", 1),
+        ("build_libtsan", 1),
         ("build_offload_nvptx", 0),
         ("build_offload_amdgcn", 0),
         ("build_libasan", 1),
@@ -178,6 +182,12 @@ def rewrite_gcc(text):
         "Requires: libubsan%{_isa} >= 8.3.1",
         "Requires: libubsan1%{_isa} >= 8.3.1",
     )
+    text = text.replace("%package -n libtsan2", "%package -n libtsan")
+    text = text.replace("%description -n libtsan2", "%description -n libtsan")
+    text = text.replace("Requires: libtsan2%{_isa} >= 12.1.1", "Requires: libtsan%{_isa} >= 5.1.1")
+    text = text.replace("%post -n libtsan2 -p /sbin/ldconfig", "%post -n libtsan -p /sbin/ldconfig")
+    text = text.replace("%postun -n libtsan2 -p /sbin/ldconfig", "%postun -n libtsan -p /sbin/ldconfig")
+    text = text.replace("%files -n libtsan2", "%files -n libtsan")
     text = text.replace(
         "%package gfortran\n"
         "Summary: Fortran support for GCC %{gcc_major}\n"
@@ -317,6 +327,32 @@ def rewrite_gcc(text):
             "%patch -P1000 -p0 -b .libstdc++-compat~\n{}".format(patch_apply),
             1,
         )
+    dts_patch_decl = "Patch{}: {}".format(
+        EL7_TLS_DTOR_XFAIL_PATCH_NUMBER, EL7_TLS_DTOR_XFAIL_PATCH
+    )
+    if dts_patch_decl not in text:
+        if "Patch3018: 0021-libstdc++-disable-tests.patch" in text:
+            text = text.replace(
+                "Patch3018: 0021-libstdc++-disable-tests.patch",
+                "Patch3018: 0021-libstdc++-disable-tests.patch\n{}".format(
+                    dts_patch_decl
+                ),
+                1,
+            )
+        else:
+            text = text.replace(patch_decl, "{}\n{}".format(patch_decl, dts_patch_decl), 1)
+    dts_patch_apply = "%patch -P{} -p1 -b .dts-test-19~".format(
+        EL7_TLS_DTOR_XFAIL_PATCH_NUMBER
+    )
+    if dts_patch_apply not in text:
+        if "%patch -P3018 -p1 -b .dts-test-18~" in text:
+            text = text.replace(
+                "%patch -P3018 -p1 -b .dts-test-18~",
+                "%patch -P3018 -p1 -b .dts-test-18~\n{}".format(dts_patch_apply),
+                1,
+            )
+        else:
+            text = text.replace(patch_apply, "{}\n{}".format(patch_apply, dts_patch_apply), 1)
     text = strip_libgccjit(text)
     return text
 

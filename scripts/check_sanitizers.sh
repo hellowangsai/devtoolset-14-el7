@@ -12,10 +12,11 @@ compile_and_run() {
   local binary=$3
   local expect=$4
   local allow_zero_exit=${5:-0}
+  local extra_args=${6:-}
   local log="$TMP_DIR/$kind.log"
 
   scl enable "$TOOLSET" -- \
-    gcc -O0 -g "$source" "-fsanitize=$kind" -o "$binary"
+    gcc -O0 -g $extra_args "$source" "-fsanitize=$kind" -o "$binary"
 
   set +e
   "$binary" >"$log" 2>&1
@@ -47,4 +48,18 @@ compile_and_run \
   "runtime error" \
   1
 
-echo "ASan and UBSan smoke tests passed under $TOOLSET"
+compile_and_run \
+  leak \
+  "$ROOT_DIR/tests/sanitizer/lsan_leak.c" \
+  "$TMP_DIR/lsan-demo" \
+  "LeakSanitizer"
+
+compile_and_run \
+  thread \
+  "$ROOT_DIR/tests/sanitizer/tsan_race.c" \
+  "$TMP_DIR/tsan-demo" \
+  "ThreadSanitizer" \
+  0 \
+  "-pthread"
+
+echo "ASan, TSan, LSan and UBSan smoke tests passed under $TOOLSET"

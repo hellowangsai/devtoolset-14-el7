@@ -53,6 +53,11 @@ class RewriteSpecTest(unittest.TestCase):
         self.assertIn("%package -n devtoolset-14-libtsan", rendered)
         self.assertIn("Patch1002: gcc14-libstdc++-compat-el7.patch", rendered)
         self.assertIn("%patch -P1002 -p0 -b .libstdc++-compat-el7~", rendered)
+        self.assertIn(
+            "Patch3019: 0019-XFAIL-thread_local-order2-when-TLS-dtor-order-is-not-correct.patch",
+            rendered,
+        )
+        self.assertIn("%patch -P3019 -p1 -b .dts-test-19~", rendered)
         self.assertNotIn("BuildRequires: /lib/libc.so.6 /usr/lib/libc.so", rendered)
         self.assertNotIn("gcc-toolset-14", rendered)
 
@@ -260,6 +265,24 @@ class RewriteSpecTest(unittest.TestCase):
         self.assertIn("Requires: libubsan1%{_isa} >= 8.3.1", rendered)
         self.assertNotIn("Requires: libubsan%{_isa} >= 8.3.1", rendered)
 
+    def test_gcc_rewrite_uses_libtsan_runtime_name(self):
+        rendered = rewrite_gcc(
+            "%package -n libtsan2\n"
+            "%description -n libtsan2\n"
+            "%package -n %{?scl_prefix}libtsan-devel\n"
+            "Requires: libtsan2%{_isa} >= 12.1.1\n"
+            "%post -n libtsan2 -p /sbin/ldconfig\n"
+            "%postun -n libtsan2 -p /sbin/ldconfig\n"
+            "%files -n libtsan2\n"
+        )
+        self.assertIn("%package -n libtsan", rendered)
+        self.assertIn("%description -n libtsan", rendered)
+        self.assertIn("Requires: libtsan%{_isa} >= 5.1.1", rendered)
+        self.assertIn("%post -n libtsan -p /sbin/ldconfig", rendered)
+        self.assertIn("%postun -n libtsan -p /sbin/ldconfig", rendered)
+        self.assertIn("%files -n libtsan", rendered)
+        self.assertNotIn("libtsan2", rendered)
+
     def test_gcc_rewrite_forces_macro_toggles(self):
         rendered = rewrite_gcc(
             "\n".join(
@@ -276,8 +299,8 @@ class RewriteSpecTest(unittest.TestCase):
                 ]
             )
         )
-        self.assertIn("%global build_libtsan 0", rendered)
-        self.assertIn("%global build_liblsan 0", rendered)
+        self.assertIn("%global build_libtsan 1", rendered)
+        self.assertIn("%global build_liblsan 1", rendered)
         self.assertIn("%global build_libhwasan 0", rendered)
         self.assertIn("%global build_d 0", rendered)
         self.assertIn("%global build_m2 0", rendered)

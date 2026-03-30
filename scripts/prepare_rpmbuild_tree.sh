@@ -9,6 +9,7 @@ RPMBUILD_ROOT=${4:-"$ROOT_DIR/build/rpmbuild"}
 GENERATED_PATCHES_DIR=${5:-"$ROOT_DIR/build/generated/PATCHES"}
 EXTRA_EXTRACT_DIR=${6:-"$ROOT_DIR/vendor/extracted-extra"}
 LOCAL_BUILDDEPS_DIR=${7:-"$ROOT_DIR/vendor/builddeps"}
+LOCAL_GCC_PATCH_DIR=${8:-"$ROOT_DIR/patches/gcc"}
 
 mkdir -p \
   "$RPMBUILD_ROOT/BUILD" \
@@ -53,6 +54,14 @@ copy_sources_from_dir() {
 
 copy_sources_from_dir "$EXTRACT_DIR"
 copy_sources_from_dir "$EXTRA_EXTRACT_DIR"
+
+if [[ -d "$LOCAL_GCC_PATCH_DIR" ]]; then
+  shopt -s nullglob
+  for patch in "$LOCAL_GCC_PATCH_DIR"/*.patch; do
+    cp -f "$patch" "$RPMBUILD_ROOT/SOURCES/"
+  done
+  shopt -u nullglob
+fi
 
 if [[ -d "$LOCAL_BUILDDEPS_DIR" ]]; then
   mkdir -p "$RPMBUILD_ROOT/SOURCES/builddeps"

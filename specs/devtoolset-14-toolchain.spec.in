@@ -18,14 +18,18 @@ Requires:       @TOOLSET@-annobin-plugin-gcc
 Requires:       @TOOLSET@-annobin-annocheck
 Requires:       libasan8
 Requires:       @TOOLSET@-libasan-devel
+Requires:       libtsan
+Requires:       @TOOLSET@-libtsan-devel
+Requires:       liblsan
+Requires:       @TOOLSET@-liblsan-devel
 Requires:       libubsan1
 Requires:       @TOOLSET@-libubsan-devel
 
 %description
 Core compiler toolchain meta package for @TOOLSET@.
 
-This first-stage toolchain explicitly includes the ASan and UBSan runtime,
-development packages, and the annobin GCC plugin plus annocheck.
+This first-stage toolchain explicitly includes the ASan, TSan, LSan, and UBSan
+runtime/development packages, plus the annobin GCC plugin and annocheck.
 
 %files
 

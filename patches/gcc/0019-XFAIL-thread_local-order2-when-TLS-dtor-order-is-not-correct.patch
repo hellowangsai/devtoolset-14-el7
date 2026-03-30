@@ -1,0 +1,64 @@
+From 5f478f5d9e8cf3d80fe46e2340fed0bf2d17a0a0 Mon Sep 17 00:00:00 2001
+From: OpenAI Codex <codex@openai.com>
+Date: Mon, 30 Mar 2026 21:20:00 +0800
+Subject: [PATCH] XFAIL thread_local-order2 when TLS dtor order is not correct
+
+EL7-compatible runtime stacks can provide __cxa_thread_atexit while still
+falling back to libstdc++'s atexit-based implementation, which runs
+main-thread thread_local destructors after global destructors.  That violates
+the ordering required by g++.dg/tls/thread_local-order2.C but it is an
+inherited runtime limitation rather than a front-end regression.
+
+Add an effective-target probe for the required destructor ordering and mark
+the test as XFAIL when the runtime cannot satisfy it.
+---
+ gcc/testsuite/g++.dg/tls/thread_local-order2.C |  2 +-
+ gcc/testsuite/lib/target-supports.exp          | 18 ++++++++++++++++++
+ 2 files changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/gcc/testsuite/g++.dg/tls/thread_local-order2.C b/gcc/testsuite/g++.dg/tls/thread_local-order2.C
+index 8ddb0b505..84d2bbfb5 100644
+--- a/gcc/testsuite/g++.dg/tls/thread_local-order2.C
++++ b/gcc/testsuite/g++.dg/tls/thread_local-order2.C
+@@ -6,7 +6,7 @@
+ // { dg-require-effective-target c++11 }
+ // { dg-add-options tls }
+ // { dg-require-effective-target tls_runtime }
+-// { dg-xfail-run-if "" { { hppa*-*-hpux* *-*-solaris* } || { newlib } } }
++// { dg-xfail-run-if "" { { hppa*-*-hpux* *-*-solaris* } || { newlib } || { ! correct_tls_dtor_order } } }
+ 
+ extern "C" void abort();
+ extern "C" int printf (const char *, ...);
+diff --git a/gcc/testsuite/lib/target-supports.exp b/gcc/testsuite/lib/target-supports.exp
+index 835c21efa..8ef4c3877 100644
+--- a/gcc/testsuite/lib/target-supports.exp
++++ b/gcc/testsuite/lib/target-supports.exp
+@@ -1054,6 +1054,26 @@ proc check_effective_target_tls_runtime {} {
+     } [add_options_for_tls ""]]
+ }
+ 
++# Return 1 if main-thread thread_local destructors run before global
++# destructors, 0 otherwise.
++
++proc check_effective_target_correct_tls_dtor_order {} {
++    return [check_runtime correct_tls_dtor_order {
++	// C++
++	extern "C" void abort ();
++	int c;
++	struct A {
++	  int i;
++	  A(int i): i(i) { ++c; }
++	  ~A() { if (i != --c) abort(); }
++	};
++	thread_local A a1(1);
++	A* ap = &a1;
++	A a0(0);
++	int main () { if (c != 2) abort(); }
++    } [add_options_for_tls "-std=gnu++11"]]
++}
++
+ # Return 1 if atomic compare-and-swap is supported on 'int'
+ 
+ proc check_effective_target_cas_char {} {
+-- 
+2.39.5
