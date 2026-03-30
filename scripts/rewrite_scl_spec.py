@@ -371,6 +371,94 @@ def rewrite_make(text):
     return text
 
 
+def rewrite_strace(text):
+    text = rewrite_generic(text)
+    text = inject_scl_define(text)
+    text = text.replace("Version: 5.13", "Version: 6.12", 1)
+    text = text.replace(
+        "BuildRequires: gcc gzip make\n",
+        "BuildRequires: {}-gcc gzip make\n".format(TARGET_BOOTSTRAP_TOOLSET),
+        1,
+    )
+    for dep in (
+        "BuildRequires: libacl-devel, time\n",
+        "BuildRequires: pkgconfig(bluez)\n",
+    ):
+        text = text.replace(dep, "")
+    old_patches = """# v5.13-6-gba1ca1e \"tests: relax -a check in prlimit64 test\"\nPatch139: 0139-tests-relax-a-check-in-prlimit64-test.patch\n# v5.13-5-ge4feb6b \"tests: move DIAG_PUSH_IGNORE_NONNULL/DIAG_POP_IGNORE_NONNULL outside main\"\nPatch140: 0140-tests-move-DIAG_PUSH_IGNORE_NONNULL-DIAG_POP_IGNORE_.patch\n# v5.13-55-g6b2191f \"filter_qualify: free allocated data on the error path exit of parse_poke_token\"\nPatch150: 0150-filter_qualify-free-allocated-data-on-the-error-path.patch\n# v5.13-56-g80dc60c \"macros: expand BIT macros, add MASK macros; add *_SAFE macros\"\nPatch151: 0151-macros-expand-BIT-macros-add-MASK-macros-add-_SAFE-m.patch\n# v5.13-58-g94ae5c2 \"trie: use BIT* and MASK* macros\"\nPatch152: 0152-trie-use-BIT-and-MASK-macros.patch\n# v5.13-65-g41b753e \"tee: rewrite num_params access in tee_fetch_buf_data\"\nPatch153: 0153-tee-rewrite-num_params-access-in-tee_fetch_buf_data.patch\n\n## RHEL7-only: headers on some builders do not provide O_TMPFILE\nPatch2000: 2000-strace-provide-O_TMPFILE-fallback-definition.patch\n## RHEL-only: aarch64 brew builders are extremely slow on qual_fault.test\nPatch2001: 2001-limit-qual_fault-scope-on-aarch64.patch\n## RHEL-only: avoid ARRAY_SIZE macro re-definition in libiberty.h\nPatch2003: 2003-undef-ARRAY_SIZE.patch\n## RHEL7-only: mark ipc_shm.gen test as XFAIL due to\n## https://bugzilla.redhat.com/1978412\nPatch2005: 2005-mark-ipc_shm-ipc_msg-XFAIL-on-ppc64.patch\n"""
+    new_patches = """# Origin: https://github.com/strace/strace/commit/ba41bc0da4b841d9343b7644a3d8c3bd5e3f2780\nPatch0001: 0001-tests-Skip-legacy_syscall_info-on-riscv64-with-kerne.patch\n\n# Origin: https://github.com/strace/strace/commit/189655e7a0603953393057f051ecc71cad3fa42e\nPatch0002: 0002-tests-Reduce-expected-precision-for-relative-timesta.patch\n\n# Origin: https://github.com/strace/strace/commit/1e4f282ba6c1fea8b689aa74affbedddbb799d21\nPatch0003: 0003-tests-group_req-fix-compilation-warnings.patch\n"""
+    text = text.replace(old_patches, new_patches, 1)
+    old_prep = """%patch139 -p1\n%patch140 -p1\n%patch150 -p1\n%patch151 -p1\n%patch152 -p1\n%patch153 -p1\n\n%patch2000 -p1\n%patch2001 -p1\n%patch2003 -p1\n%patch2005 -p1\n\necho -n %version-%release > .tarball-version\necho -n 2020 > .year\necho -n 2021-05-14 > doc/.strace.1.in.date\n"""
+    new_prep = """%patch0001 -p1\n%patch0002 -p1\n%patch0003 -p1\n\necho -n %version-%release > .tarball-version\necho -n 2024 > .year\necho -n 2023-11-21 > doc/.strace.1.in.date\necho -n 2022-01-01 > doc/.strace-log-merge.1.in.date\n"""
+    text = text.replace(old_prep, new_prep, 1)
+    text = text.replace(
+        "%configure --enable-mpers=check --with-libdw ac_cv_member_struct_perf_event_attr_context_switch=no",
+        'export libdw_LIBS="-lzstd ${libdw_LIBS:-}"\n'
+        "%configure --enable-mpers=check --with-libdw --enable-bundled=yes ac_cv_member_struct_perf_event_attr_context_switch=no",
+        1,
+    )
+    build_marker = "%build\n"
+    if build_marker in text and BOOTSTRAP_ENV_BLOCK not in text:
+        text = text.replace(build_marker, build_marker + BOOTSTRAP_ENV_BLOCK + "\n", 1)
+    return text
+
+
+def rewrite_valgrind(text):
+    text = rewrite_generic(text)
+    text = inject_scl_define(text)
+    text = text.replace("Version: 3.17.0", "Version: 3.26.0", 1)
+    text = text.replace("Release: 4%{?dist}", "Release: 5%{?dist}", 1)
+    text = text.replace("URL: http://www.valgrind.org/", "URL: https://www.valgrind.org/", 1)
+    text = text.replace(
+        "BuildRequires: gcc-c++\n",
+        "BuildRequires: {}-gcc-c++\nBuildRequires: {}-gcc\n".format(
+            TARGET_BOOTSTRAP_TOOLSET, TARGET_BOOTSTRAP_TOOLSET
+        ),
+        1,
+    )
+    if "BuildRequires: python3-devel\n" not in text:
+        text = text.replace(
+            "# For make check validating the documentation\nBuildRequires: docbook-dtds\n\n",
+            "# For make check validating the documentation\nBuildRequires: docbook-dtds\n\n"
+            "# For running the testsuite.\n"
+            "BuildRequires: python3-devel\n\n",
+            1,
+        )
+    old_patches = """# Needs investigation and pushing upstream\nPatch1: valgrind-3.9.0-cachegrind-improvements.patch\n\n# KDE#211352 - helgrind races in helgrind's own mythread_wrapper\nPatch2: valgrind-3.9.0-helgrind-race-supp.patch\n\n# Make ld.so supressions slightly less specific.\nPatch3: valgrind-3.9.0-ldso-supp.patch\n\n# Add some stack-protector\nPatch4: valgrind-3.16.0-some-stack-protector.patch\n\n# Add some -Wl,z,now.\nPatch5: valgrind-3.16.0-some-Wl-z-now.patch\n\n# Upstream commits that provide additional ppc64le ISA 3.1 support\n# commit 3cc0232c46a5905b4a6c2fbd302b58bf5f90b3d5\n# PPC64: ISA 3.1 VSX PCV Generate Operations\n# commit 078f89e99b6f62e043f6138c6a7ae238befc1f2a\n# PPC64: Reduced-Precision bfloat16 Outer Product & Format Conversion Operations\n# commit e09fdaf569b975717465ed8043820d0198d4d47d\n# PPC64: Reduced-Precision: Missing Integer-based Outer Product Operations\nPatch6: valgrind-3.17.0-ppc64-isa-3.1.patch\n\n# Upstream commits that provide extra tests for ppc64le ISA 3.1 support\n# commit c8fa838be405d7ac43035dcf675bf490800c26ec\n# Reduced Precision bfloat16 outer product tests\n# commit 4bcc6c8a97c10c4dd41b35bd3b3035ec4037d524\n# VSX Permute Control Vector Generate Operation tests.\n# commit c589b652939655090c005a982a71f50c489fb5ce\n# Reduced precision Missing Integer based outer tests\nPatch7: valgrind-3.17.0-ppc64-isa-3.1-tests.patch\n\n# commit 45873298ff2d17accc65654d64758360616aade5\n# s390x: Add missing UNOP insns to s390_insn_as_string\nPatch8: valgrind-3.17.0-s390_insn_as_string.patch\n\n# KDE#435908 Don't look for separate debuginfo if image already has .debug_info\nPatch9: valgrind-3.17.0-debuginfod.patch\n\n# KDE#423963 Only process clone results in the parent thread\nPatch10: valgrind-3.17.0-clone-parent-res.patch\n"""
+    new_patches = """# Needs investigation and pushing upstream\nPatch1: valgrind-3.9.0-cachegrind-improvements.patch\n\n# Make ld.so supressions slightly less specific.\nPatch2: valgrind-3.9.0-ldso-supp.patch\n\n# Add some stack-protector\nPatch3: valgrind-3.26.0-some-stack-protector.patch\n\n# Add some -Wl,z,now.\nPatch4: valgrind-3.26.0-some-Wl-z-now.patch\n\n# VALGRIND_3_26_BRANCH patches\nPatch5: 0001-Prepare-NEWS-for-branch-3.26-fixes.patch\nPatch6: 0002-Bug-511972-valgrind-3.26.0-tests-fail-to-build-on-up.patch\nPatch7: 0003-readlink-proc-self-exe-overwrites-buffer-beyond-its-.patch\nPatch8: 0004-Linux-DRD-suppression-add-an-entry-for-__is_decorate.patch\nPatch9: 0005-Linux-Helgrind-add-a-suppression-for-_dl_allocate_tl.patch\nPatch10: 0006-Disable-linux-madvise-MADV_GUARD_INSTALL.patch\nPatch11: 0007-Bug-514613-Unclosed-leak_summary-still_reachable-tag.patch\nPatch12: 0008-Bug-514206-Assertion-sr_isError-sr-failed-mmap-fd-po.patch\n\n# Refix for https://bugs.kde.org/show_bug.cgi?id=514613\nPatch100: 0001-Refix-still_reachable-xml-closing-tag-and-add-testca.patch\n"""
+    text = text.replace(old_patches, new_patches, 1)
+    old_prep = """%patch1 -p1\n%patch2 -p1\n%patch3 -p1\n\n# Old rhel gcc doesn't have -fstack-protector-strong.\n%if 0%{?fedora} || 0%{?rhel} >= 7\n%patch4 -p1\n%patch5 -p1\n%endif\n\n%patch6 -p1\n%patch7 -p1\n\n%patch8 -p1\n%patch9 -p1\n%patch10 -p1\n"""
+    new_prep = """%patch1 -p1\n%patch2 -p1\n%patch3 -p1\n%patch4 -p1\n\n%patch5 -p1\n%patch6 -p1\n%patch7 -p1\n%patch8 -p1\n%patch9 -p1\n%patch10 -p1\n%patch11 -p1\n%patch12 -p1\n\n%patch100 -p1\n"""
+    text = text.replace(old_prep, new_prep, 1)
+    text = text.replace(
+        "# LTO triggers undefined symbols in valgrind.  Valgrind has a --enable-lto\n# configure time option, but that doesn't seem to help.\n# Disable LTO for now.\n%define _lto_cflags %{nil}\n",
+        "# LTO triggers undefined symbols in valgrind.  But valgrind has a\n# --enable-lto configure time option that we will use instead.\n%define _lto_cflags %{nil}\n",
+        1,
+    )
+    text = text.replace(
+        "%configure\n",
+        "%configure \\\n  --enable-lto\n",
+        1,
+    )
+    text = text.replace(
+        "%files devel\n%dir %{_includedir}/valgrind\n%{_includedir}/valgrind/valgrind.h\n%{_includedir}/valgrind/callgrind.h\n%{_includedir}/valgrind/drd.h\n%{_includedir}/valgrind/helgrind.h\n%{_includedir}/valgrind/memcheck.h\n%{_includedir}/valgrind/dhat.h\n%{_libdir}/pkgconfig/valgrind.pc\n",
+        "%files devel\n%dir %{_includedir}/valgrind\n%{_includedir}/valgrind/*\n%{_libdir}/pkgconfig/valgrind.pc\n",
+        1,
+    )
+    text = text.replace(
+        "rm -f docs/installed/*.ps\n",
+        "rm -f docs/installed/*.ps\n"
+        "rm -f $RPM_BUILD_ROOT%{_datadir}/gdb/auto-load/valgrind-monitor.py\n"
+        "rm -f $RPM_BUILD_ROOT%{_datadir}/gdb/auto-load/valgrind-monitor-def.py\n"
+        "rm -f $RPM_BUILD_ROOT%{_libexecdir}/valgrind/valgrind-monitor.py\n"
+        "rm -f $RPM_BUILD_ROOT%{_libexecdir}/valgrind/valgrind-monitor-def.py\n",
+        1,
+    )
+    build_marker = "%build\n"
+    if build_marker in text and BOOTSTRAP_ENV_BLOCK not in text:
+        text = text.replace(build_marker, build_marker + BOOTSTRAP_ENV_BLOCK + "\n", 1)
+    return text
+
 def rewrite_elfutils(text):
     text = rewrite_generic(text)
     text = inject_scl_define(text)
@@ -813,7 +901,7 @@ def rewrite_gdb(text):
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--kind", choices=("generic", "gcc", "binutils", "gdb", "make", "elfutils", "annobin"), default="generic"
+        "--kind", choices=("generic", "gcc", "binutils", "gdb", "make", "elfutils", "annobin", "strace", "valgrind"), default="generic"
     )
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -832,6 +920,10 @@ def main(argv):
         rendered = rewrite_elfutils(source)
     elif args.kind == "annobin":
         rendered = rewrite_annobin(source)
+    elif args.kind == "strace":
+        rendered = rewrite_strace(source)
+    elif args.kind == "valgrind":
+        rendered = rewrite_valgrind(source)
     else:
         rendered = rewrite_generic(source)
     args.output.parent.mkdir(parents=True, exist_ok=True)

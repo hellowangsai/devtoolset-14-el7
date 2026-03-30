@@ -10,6 +10,8 @@ from scripts.rewrite_scl_spec import (
     rewrite_gdb,
     rewrite_generic,
     rewrite_make,
+    rewrite_strace,
+    rewrite_valgrind,
 )
 
 
@@ -40,6 +42,157 @@ class RewriteSpecTest(unittest.TestCase):
     def test_generic_rewrite_falls_back_build_ldflags_macro(self):
         rendered = rewrite_generic("LDFLAGS='%{build_ldflags}'")
         self.assertIn("LDFLAGS='%{?__global_ldflags}'", rendered)
+
+    def test_strace_rewrite_rebases_to_gcc14_era_source_line(self):
+        rendered = rewrite_strace(
+            """Version: 5.13
+BuildRequires: gcc gzip make
+# v5.13-6-gba1ca1e "tests: relax -a check in prlimit64 test"
+Patch139: 0139-tests-relax-a-check-in-prlimit64-test.patch
+# v5.13-5-ge4feb6b "tests: move DIAG_PUSH_IGNORE_NONNULL/DIAG_POP_IGNORE_NONNULL outside main"
+Patch140: 0140-tests-move-DIAG_PUSH_IGNORE_NONNULL-DIAG_POP_IGNORE_.patch
+# v5.13-55-g6b2191f "filter_qualify: free allocated data on the error path exit of parse_poke_token"
+Patch150: 0150-filter_qualify-free-allocated-data-on-the-error-path.patch
+# v5.13-56-g80dc60c "macros: expand BIT macros, add MASK macros; add *_SAFE macros"
+Patch151: 0151-macros-expand-BIT-macros-add-MASK-macros-add-_SAFE-m.patch
+# v5.13-58-g94ae5c2 "trie: use BIT* and MASK* macros"
+Patch152: 0152-trie-use-BIT-and-MASK-macros.patch
+# v5.13-65-g41b753e "tee: rewrite num_params access in tee_fetch_buf_data"
+Patch153: 0153-tee-rewrite-num_params-access-in-tee_fetch_buf_data.patch
+
+## RHEL7-only: headers on some builders do not provide O_TMPFILE
+Patch2000: 2000-strace-provide-O_TMPFILE-fallback-definition.patch
+## RHEL-only: aarch64 brew builders are extremely slow on qual_fault.test
+Patch2001: 2001-limit-qual_fault-scope-on-aarch64.patch
+## RHEL-only: avoid ARRAY_SIZE macro re-definition in libiberty.h
+Patch2003: 2003-undef-ARRAY_SIZE.patch
+## RHEL7-only: mark ipc_shm.gen test as XFAIL due to
+## https://bugzilla.redhat.com/1978412
+Patch2005: 2005-mark-ipc_shm-ipc_msg-XFAIL-on-ppc64.patch
+%patch139 -p1
+%patch140 -p1
+%patch150 -p1
+%patch151 -p1
+%patch152 -p1
+%patch153 -p1
+
+%patch2000 -p1
+%patch2001 -p1
+%patch2003 -p1
+%patch2005 -p1
+
+echo -n %version-%release > .tarball-version
+echo -n 2020 > .year
+echo -n 2021-05-14 > doc/.strace.1.in.date
+%build
+%configure --enable-mpers=check --with-libdw ac_cv_member_struct_perf_event_attr_context_switch=no
+"""
+        )
+        self.assertIn("Version: 6.12", rendered)
+        self.assertIn("BuildRequires: devtoolset-11-gcc gzip make", rendered)
+        self.assertNotIn("BuildRequires: libacl-devel, time", rendered)
+        self.assertNotIn("BuildRequires: pkgconfig(bluez)", rendered)
+        self.assertIn("Patch0001: 0001-tests-Skip-legacy_syscall_info-on-riscv64-with-kerne.patch", rendered)
+        self.assertIn("Patch0003: 0003-tests-group_req-fix-compilation-warnings.patch", rendered)
+        self.assertIn("%patch0003 -p1", rendered)
+        self.assertIn("echo -n 2024 > .year", rendered)
+        self.assertIn("doc/.strace-log-merge.1.in.date", rendered)
+        self.assertIn("--enable-bundled=yes", rendered)
+        self.assertIn('export libdw_LIBS="-lzstd ${libdw_LIBS:-}"', rendered)
+        self.assertIn("export CC=/opt/rh/devtoolset-11/root/usr/bin/gcc", rendered)
+
+    def test_valgrind_rewrite_rebases_to_gcc14_era_source_line(self):
+        rendered = rewrite_valgrind(
+            """Version: 3.17.0
+Release: 4%{?dist}
+URL: http://www.valgrind.org/
+BuildRequires: gcc-c++
+# For make check validating the documentation
+BuildRequires: docbook-dtds
+
+# Needs investigation and pushing upstream
+Patch1: valgrind-3.9.0-cachegrind-improvements.patch
+
+# KDE#211352 - helgrind races in helgrind's own mythread_wrapper
+Patch2: valgrind-3.9.0-helgrind-race-supp.patch
+
+# Make ld.so supressions slightly less specific.
+Patch3: valgrind-3.9.0-ldso-supp.patch
+
+# Add some stack-protector
+Patch4: valgrind-3.16.0-some-stack-protector.patch
+
+# Add some -Wl,z,now.
+Patch5: valgrind-3.16.0-some-Wl-z-now.patch
+
+# Upstream commits that provide additional ppc64le ISA 3.1 support
+# commit 3cc0232c46a5905b4a6c2fbd302b58bf5f90b3d5
+# PPC64: ISA 3.1 VSX PCV Generate Operations
+# commit 078f89e99b6f62e043f6138c6a7ae238befc1f2a
+# PPC64: Reduced-Precision bfloat16 Outer Product & Format Conversion Operations
+# commit e09fdaf569b975717465ed8043820d0198d4d47d
+# PPC64: Reduced-Precision: Missing Integer-based Outer Product Operations
+Patch6: valgrind-3.17.0-ppc64-isa-3.1.patch
+
+# Upstream commits that provide extra tests for ppc64le ISA 3.1 support
+# commit c8fa838be405d7ac43035dcf675bf490800c26ec
+# Reduced Precision bfloat16 outer product tests
+# commit 4bcc6c8a97c10c4dd41b35bd3b3035ec4037d524
+# VSX Permute Control Vector Generate Operation tests.
+# commit c589b652939655090c005a982a71f50c489fb5ce
+# Reduced precision Missing Integer based outer tests
+Patch7: valgrind-3.17.0-ppc64-isa-3.1-tests.patch
+
+# commit 45873298ff2d17accc65654d64758360616aade5
+# s390x: Add missing UNOP insns to s390_insn_as_string
+Patch8: valgrind-3.17.0-s390_insn_as_string.patch
+
+# KDE#435908 Don't look for separate debuginfo if image already has .debug_info
+Patch9: valgrind-3.17.0-debuginfod.patch
+
+# KDE#423963 Only process clone results in the parent thread
+Patch10: valgrind-3.17.0-clone-parent-res.patch
+%patch1 -p1
+%patch2 -p1
+%patch3 -p1
+
+# Old rhel gcc doesn't have -fstack-protector-strong.
+%if 0%{?fedora} || 0%{?rhel} >= 7
+%patch4 -p1
+%patch5 -p1
+%endif
+
+%patch6 -p1
+%patch7 -p1
+
+%patch8 -p1
+%patch9 -p1
+%patch10 -p1
+%build
+# LTO triggers undefined symbols in valgrind.  Valgrind has a --enable-lto
+# configure time option, but that doesn't seem to help.
+# Disable LTO for now.
+%define _lto_cflags %{nil}
+%configure
+%install
+rm -f docs/installed/*.ps
+"""
+        )
+        self.assertIn("Version: 3.26.0", rendered)
+        self.assertIn("Release: 5%{?dist}", rendered)
+        self.assertIn("URL: https://www.valgrind.org/", rendered)
+        self.assertIn("BuildRequires: devtoolset-11-gcc-c++", rendered)
+        self.assertIn("BuildRequires: devtoolset-11-gcc", rendered)
+        self.assertIn("BuildRequires: python3-devel", rendered)
+        self.assertIn("Patch12: 0008-Bug-514206-Assertion-sr_isError-sr-failed-mmap-fd-po.patch", rendered)
+        self.assertIn("Patch100: 0001-Refix-still_reachable-xml-closing-tag-and-add-testca.patch", rendered)
+        self.assertIn("%patch100 -p1", rendered)
+        self.assertIn("--enable-lto", rendered)
+        self.assertIn("export CC=/opt/rh/devtoolset-11/root/usr/bin/gcc", rendered)
+        self.assertIn("rm -f $RPM_BUILD_ROOT%{_datadir}/gdb/auto-load/valgrind-monitor.py", rendered)
+        self.assertIn("rm -f $RPM_BUILD_ROOT%{_datadir}/gdb/auto-load/valgrind-monitor-def.py", rendered)
+        self.assertIn("rm -f $RPM_BUILD_ROOT%{_libexecdir}/valgrind/valgrind-monitor.py", rendered)
+        self.assertIn("rm -f $RPM_BUILD_ROOT%{_libexecdir}/valgrind/valgrind-monitor-def.py", rendered)
 
     def test_gcc_rewrite_forces_el7_defaults(self):
         source = (ROOT / "tests" / "fixtures" / "gcc-toolset-14-gcc.spec").read_text(

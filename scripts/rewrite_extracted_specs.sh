@@ -47,6 +47,8 @@ annobin_spec=$(find_first_spec "*gcc-toolset-14-annobin*.spec" "annobin.spec")
 dwz_spec=$(find_first_spec "*gcc-toolset-14-dwz*.spec" "dwz.spec")
 make_spec=$(find_first_spec "*devtoolset-11-make*.spec" "make.spec")
 elfutils_spec=$(find_first_spec "*devtoolset-11-elfutils*.spec" "elfutils.spec")
+strace_spec=$(find_first_spec "*devtoolset-11-strace*.spec" "strace.spec")
+valgrind_spec=$(find_first_spec "*devtoolset-11-valgrind*.spec" "valgrind.spec")
 
 if [[ -n "$gcc_spec" ]]; then
   rewrite_one gcc "$gcc_spec" "devtoolset-14-gcc.spec"
@@ -68,4 +70,10 @@ if [[ -n "$make_spec" ]]; then
 fi
 if [[ -n "$elfutils_spec" ]]; then
   rewrite_one elfutils "$elfutils_spec" "devtoolset-14-elfutils.spec"
+fi
+if [[ -n "$strace_spec" ]]; then
+  rewrite_one strace "$strace_spec" "devtoolset-14-strace.spec"
+fi
+if [[ -n "$valgrind_spec" ]]; then
+  rewrite_one valgrind "$valgrind_spec" "devtoolset-14-valgrind.spec"
 fi
