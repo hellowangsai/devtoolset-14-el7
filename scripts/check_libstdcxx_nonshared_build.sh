@@ -180,6 +180,10 @@ invalidate_overlay_objects() {
     "$base/nonshared98/libnonshared98convenience48.la" \
     "$base/nonshared11/codecvt.lo" \
     "$base/nonshared11/codecvt.o" \
+    "$base/nonshared11/condition_variable.lo" \
+    "$base/nonshared11/condition_variable.o" \
+    "$base/nonshared11/cxx11-ios_failure.lo" \
+    "$base/nonshared11/cxx11-ios_failure.o" \
     "$base/nonshared11/future48.lo" \
     "$base/nonshared11/future48.o" \
     "$base/nonshared11/random48.lo" \
