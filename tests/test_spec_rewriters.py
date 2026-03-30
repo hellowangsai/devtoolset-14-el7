@@ -3,6 +3,7 @@ from pathlib import Path
 
 from scripts.render_scl_specs import render
 from scripts.rewrite_scl_spec import (
+    rewrite_annobin,
     rewrite_binutils,
     rewrite_elfutils,
     rewrite_gcc,
@@ -566,6 +567,76 @@ class RewriteSpecTest(unittest.TestCase):
             "done\n"
         )
         self.assertIn("rm -rf $RPM_BUILD_ROOT%{_datadir}/gdb/python/gdb/dap", rendered)
+
+    def test_annobin_rewrite_follows_dts11_bootstrap_model(self):
+        rendered = rewrite_annobin(
+            "\n".join(
+                [
+                    "%{?scl:%scl_package annobin}",
+                    "%bcond_without clangplugin",
+                    "%bcond_without llvmplugin",
+                    "%bcond_without plugin_rebuild",
+                    "# %%if %%{without plugin_rebuild}",
+                    "# %%undefine _annotated_build",
+                    "# %%endif",
+                    "%global with_hard_gcc_version_requirement 0",
+                    "%global annobin_source_dir %{?_scl_root}/%{_usrsrc}/annobin",
+                    "%if %{bootstrapping}",
+                    "BuildRequires: gcc gcc-c++",
+                    "%define gcc_for_annobin /usr/bin/gcc",
+                    "%define gxx_for_annobin /usr/bin/g++",
+                    "%else",
+                    "BuildRequires: %{?scl_prefix}gcc",
+                    "BuildRequires: %{?scl_prefix}gcc-c++",
+                    "BuildRequires: %{?scl_prefix}annobin-plugin-gcc",
+                    "%define gcc_for_annobin %{?_scl_root}/usr/bin/gcc",
+                    "%define gxx_for_annobin %{?_scl_root}/usr/bin/g++",
+                    "%endif",
+                    "#---------------------------------------------------------------------------------",
+                    "",
+                    "# Make sure that the necessary sub-packages are built.",
+                    "%if %{with gccplugin}",
+                    "Requires: %{name}-plugin-gcc",
+                    "%endif",
+                    "",
+                    "%build",
+                    "%set_build_flags",
+                    "export CFLAGS=\"$CFLAGS $RPM_OPT_FLAGS %build_cflags -I%{?_scl_root}/usr/include\"",
+                    "export LDFLAGS=\"$LDFLAGS %build_ldflags -L%{?_scl_root}/usr/lib64 -L%{?_scl_root}/usr/lib\"",
+                    "%if %{with plugin_rebuild}",
+                    "# Rebuild the plugin(s), this time using the plugin itself!  This",
+                    "# ensures that the plugin works, and that it contains annotations",
+                    "# of its own.",
+                    "",
+                    "%if %{with gccplugin}",
+                    "cp gcc-plugin/.libs/annobin.so.0.0.0 %{_tmppath}/tmp_annobin.so",
+                    "make -C gcc-plugin clean",
+                    "BUILD_FLAGS=\"-fplugin=%{_tmppath}/tmp_annobin.so\"",
+                    "",
+                    "# Disable the standard annobin plugin so that we do get conflicts.",
+                    "%if 0%{?rhel} && 0%{?rhel} < 9",
+                    "OPTS=\"$(rpm --eval '%undefine _annotated_build %build_cflags %build_ldflags')\"",
+                    "%else",
+                    "OPTS=\"$(rpm --undefine=_annotated_build --eval '%build_cflags %build_ldflags')\"",
+                    "%endif",
+                    "",
+                    "make -C gcc-plugin CXXFLAGS=\"$OPTS $BUILD_FLAGS\"",
+                    "rm %{_tmppath}/tmp_annobin.so",
+                    "%endif",
+                    "%endif",
+                ]
+            )
+        )
+        self.assertIn("%bcond_with clangplugin", rendered)
+        self.assertIn("%bcond_with llvmplugin", rendered)
+        self.assertIn("%bcond_with plugin_rebuild", rendered)
+        self.assertIn("%undefine _annotated_build", rendered)
+        self.assertIn("%global with_hard_gcc_version_requirement 1", rendered)
+        self.assertNotIn("BuildRequires: %{?scl_prefix}annobin-plugin-gcc", rendered)
+        self.assertIn("BuildRequires: %{?scl_prefix}gcc", rendered)
+        self.assertIn("export CFLAGS=\"$CFLAGS $RPM_OPT_FLAGS -I%{?_scl_root}/usr/include\"", rendered)
+        self.assertIn("export CXXFLAGS=\"$CXXFLAGS $RPM_OPT_FLAGS -I%{?_scl_root}/usr/include\"", rendered)
+        self.assertIn("export LDFLAGS=\"$LDFLAGS %{?__global_ldflags} -L%{?_scl_root}/usr/lib64 -L%{?_scl_root}/usr/lib\"", rendered)
 
     def test_make_rewrite_sets_scl_and_bootstrap_compiler(self):
         rendered = rewrite_make(

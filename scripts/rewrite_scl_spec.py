@@ -454,6 +454,133 @@ def rewrite_elfutils(text):
     return text
 
 
+def rewrite_annobin(text):
+    text = rewrite_generic(text)
+    text = inject_scl_define(text)
+    text = text.replace("%bcond_without clangplugin", "%bcond_with clangplugin")
+    text = text.replace("%bcond_without llvmplugin", "%bcond_with llvmplugin")
+    text = text.replace("%bcond_without plugin_rebuild", "%bcond_with plugin_rebuild")
+    text = text.replace(
+        "# %%if %%{without plugin_rebuild}\n# %%undefine _annotated_build\n# %%endif\n",
+        "%if %{without plugin_rebuild}\n%undefine _annotated_build\n%endif\n",
+        1,
+    )
+    text = text.replace(
+        "%global with_hard_gcc_version_requirement 0",
+        "%global with_hard_gcc_version_requirement 1",
+        1,
+    )
+    text = text.replace(
+        "Requires: (%{?scl_prefix}gcc >= %{gcc_major} with %{?scl_prefix}gcc < %{gcc_next})",
+        "Requires: %{?scl_prefix}gcc >= %{gcc_major}, %{?scl_prefix}gcc < %{gcc_next}",
+    )
+    text = text.replace(
+        "%global ANNOBIN_GCC_PLUGIN_DIR %(%gcc_for_annobin --print-file-name=plugin)",
+        "%global ANNOBIN_GCC_PLUGIN_DIR %{_scl_root}/usr/lib/gcc/x86_64-redhat-linux/%{gcc_major}/plugin",
+        1,
+    )
+    text = re.sub(
+        r"%if %\{bootstrapping\}\n.*?%endif\n\n#---------------------------------------------------------------------------------\n\n# Make sure that the necessary sub-packages are built\.\n",
+        "%{?scl:Requires:%scl_runtime}\n"
+        "%{?scl:BuildRequires:%scl_runtime}\n"
+        "%{?scl:BuildRequires:scl-utils-build}\n"
+        "# We need the devtoolset-14 version of gcc to build annobin, as otherwise the versions will not match.\n"
+        "%{?scl:Requires:%scl_require_package %{scl} gcc}\n\n"
+        "BuildRequires: %{?scl_prefix}gcc\n\n"
+        "%define gcc_for_annobin %{?_scl_root}/usr/bin/gcc\n"
+        "%define gxx_for_annobin %{?_scl_root}/usr/bin/g++\n\n"
+        "#---------------------------------------------------------------------------------\n\n# Make sure that the necessary sub-packages are built.\n",
+        text,
+        flags=re.S,
+        count=1,
+    )
+    text = text.replace(
+        "BuildRequires: %{?scl_prefix}annobin-plugin-gcc\n",
+        "",
+        1,
+    )
+    text = text.replace(
+        "%global annobin_source_dir %{?_scl_root}/%{_usrsrc}/annobin\n",
+        "",
+        1,
+    )
+    text = text.replace(
+        '%build\n\nCONFIG_ARGS="--quiet"\n',
+        '%build\n\n'
+        'BUILD_ANNOBIN_GCC_PLUGIN_DIR=%{ANNOBIN_GCC_PLUGIN_DIR}\n'
+        'if [ ! -f "${BUILD_ANNOBIN_GCC_PLUGIN_DIR}/include/bversion.h" ] && '
+        '[ -f %{_sourcedir}/builddeps/devtoolset-14-gcc-plugin-devel/opt/rh/devtoolset-14/root/usr/lib/gcc/x86_64-redhat-linux/%{gcc_major}/plugin/include/bversion.h ]; then\n'
+        '  BUILD_ANNOBIN_GCC_PLUGIN_DIR=%{_sourcedir}/builddeps/devtoolset-14-gcc-plugin-devel/opt/rh/devtoolset-14/root/usr/lib/gcc/x86_64-redhat-linux/%{gcc_major}/plugin\n'
+        'fi\n\n'
+        'CONFIG_ARGS="--quiet"\n',
+        1,
+    )
+    text = text.replace(
+        'CONFIG_ARGS="$CONFIG_ARGS --with-gcc-plugin-dir=%{ANNOBIN_GCC_PLUGIN_DIR}"',
+        'CONFIG_ARGS="$CONFIG_ARGS --with-gcc-plugin-dir=${BUILD_ANNOBIN_GCC_PLUGIN_DIR}"',
+        1,
+    )
+    text = text.replace(
+        'export CFLAGS="$CFLAGS $RPM_OPT_FLAGS %build_cflags -I%{?_scl_root}/usr/include"\n'
+        'export LDFLAGS="$LDFLAGS %build_ldflags -L%{?_scl_root}/usr/lib64 -L%{?_scl_root}/usr/lib"\n',
+        'export CC=%gcc_for_annobin\n'
+        'export CXX=%gxx_for_annobin\n'
+        'export CFLAGS="$CFLAGS $RPM_OPT_FLAGS -I%{?_scl_root}/usr/include"\n'
+        'export CXXFLAGS="$CXXFLAGS $RPM_OPT_FLAGS -I%{?_scl_root}/usr/include"\n'
+        'export LDFLAGS="$LDFLAGS %{?__global_ldflags} -L%{?_scl_root}/usr/lib64 -L%{?_scl_root}/usr/lib"\n',
+        1,
+    )
+    text = re.sub(
+        r"%if %\{with plugin_rebuild\}\n# Rebuild the plugin\(s\), this time using the plugin itself!.*?%endif\n\n# endif for %%if \{with_plugin_rebuild\}\n%endif\n",
+        "%if %{with plugin_rebuild}\n"
+        "# Rebuild the plugin(s), this time using the plugin itself!  This\n"
+        "# ensures that the plugin works, and that it contains annotations\n"
+        "# of its own.\n\n"
+        "%if %{with gccplugin}\n"
+        "cp gcc-plugin/.libs/annobin.so.0.0.0 %{_tmppath}/tmp_annobin.so\n"
+        "make -C gcc-plugin clean\n"
+        "BUILD_FLAGS=\"-fplugin=%{_tmppath}/tmp_annobin.so\"\n\n"
+        "# Disable the standard annobin plugin so that we do get conflicts.\n"
+        "# Note: the \"-fplugin=annobin\" is here, despite the fact that it will also\n"
+        "# be automatically added to the gcc command line via\n"
+        "# \"-specs=/usr/lib/rpm/redhat/redhat-annobin-cc1\" because of a bug in gcc's\n"
+        "# plugin command line options handling.\n"
+        "BUILD_FLAGS=\"$BUILD_FLAGS -fplugin=annobin -fplugin-arg-annobin-disable\"\n\n"
+        "# If building on RHEL7, enable the next option as the .attach_to_group\n"
+        "# assembler pseudo op is not available in the assembler.\n"
+        "BUILD_FLAGS=\"$BUILD_FLAGS -fplugin-arg-tmp_annobin-no-attach\"\n\n"
+        "make -C gcc-plugin CXX=%gxx_for_annobin CXXFLAGS=\"%{optflags} $BUILD_FLAGS\"\n"
+        "rm %{_tmppath}/tmp_annobin.so\n"
+        "%endif\n\n"
+        "%if %{with clangplugin}\n"
+        "cp clang-plugin/annobin-for-clang.so %{_tmppath}/tmp_annobin.so\n"
+        "make -C clang-plugin all CXXFLAGS=\"%{optflags} $BUILD_FLAGS\"\n"
+        "%endif\n\n"
+        "%if %{with llvmplugin}\n"
+        "cp llvm-plugin/annobin-for-llvm.so %{_tmppath}/tmp_annobin.so\n"
+        "make -C llvm-plugin all CXXFLAGS=\"%{optflags} $BUILD_FLAGS\"\n"
+        "%endif\n\n"
+        "%endif\n",
+        text,
+        flags=re.S,
+        count=1,
+    )
+    text = text.replace(
+        "# Also install a copy of the sources into the build tree.\n"
+        "mkdir -p                            %{buildroot}%{annobin_source_dir}\n"
+        "cp %{_sourcedir}/%{annobin_sources} %{buildroot}%{annobin_source_dir}/latest-annobin.tar.xz\n",
+        "",
+        1,
+    )
+    text = text.replace(
+        "%dir %{annobin_source_dir}\n"
+        "%{annobin_source_dir}/latest-annobin.tar.xz\n",
+        "",
+        1,
+    )
+    return text
+
+
 def rewrite_binutils(text):
     text = rewrite_generic(text)
     for old, new in (
@@ -650,7 +777,7 @@ def rewrite_gdb(text):
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--kind", choices=("generic", "gcc", "binutils", "gdb", "make", "elfutils"), default="generic"
+        "--kind", choices=("generic", "gcc", "binutils", "gdb", "make", "elfutils", "annobin"), default="generic"
     )
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -667,6 +794,8 @@ def main(argv):
         rendered = rewrite_make(source)
     elif args.kind == "elfutils":
         rendered = rewrite_elfutils(source)
+    elif args.kind == "annobin":
+        rendered = rewrite_annobin(source)
     else:
         rendered = rewrite_generic(source)
     args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -58,7 +58,7 @@ if [[ -n "$gdb_spec" ]]; then
   rewrite_one gdb "$gdb_spec" "devtoolset-14-gdb.spec"
 fi
 if [[ -n "$annobin_spec" ]]; then
-  rewrite_one generic "$annobin_spec" "devtoolset-14-annobin.spec"
+  rewrite_one annobin "$annobin_spec" "devtoolset-14-annobin.spec"
 fi
 if [[ -n "$dwz_spec" ]]; then
   rewrite_one generic "$dwz_spec" "devtoolset-14-dwz.spec"
