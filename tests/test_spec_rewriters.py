@@ -4,9 +4,11 @@ from pathlib import Path
 from scripts.render_scl_specs import render
 from scripts.rewrite_scl_spec import (
     rewrite_binutils,
+    rewrite_elfutils,
     rewrite_gcc,
     rewrite_gdb,
     rewrite_generic,
+    rewrite_make,
 )
 
 
@@ -564,6 +566,61 @@ class RewriteSpecTest(unittest.TestCase):
             "done\n"
         )
         self.assertIn("rm -rf $RPM_BUILD_ROOT%{_datadir}/gdb/python/gdb/dap", rendered)
+
+    def test_make_rewrite_sets_scl_and_bootstrap_compiler(self):
+        rendered = rewrite_make(
+            "\n".join(
+                [
+                    "%global __python /usr/bin/python3",
+                    "%{?scl:%{?scl_package:%scl_package make}}",
+                    "BuildRequires: gcc",
+                    "%build",
+                    "",
+                    "%configure \\",
+                    "\t--without-guile",
+                ]
+            )
+        )
+        self.assertIn("%global scl devtoolset-14", rendered)
+        self.assertIn("BuildRequires: devtoolset-11-gcc", rendered)
+        self.assertIn("export CC=/opt/rh/devtoolset-11/root/usr/bin/gcc", rendered)
+        self.assertIn("%{?scl:%{?scl_package:%scl_package make}}", rendered)
+
+    def test_elfutils_rewrite_sets_scl_and_bootstrap_compilers(self):
+        rendered = rewrite_elfutils(
+            "\n".join(
+                [
+                    "%global __python /usr/bin/python3",
+                    "%{?scl:%{?scl_package:%scl_package elfutils}}",
+                    "BuildRequires: gcc",
+                    "BuildRequires: gcc-c++",
+                    "%prep",
+                    "%setup -q -n elfutils-%{version}",
+                    "%build",
+                    "trap 'cat config.log' EXIT",
+                    "%configure CFLAGS=\"$RPM_OPT_FLAGS -fexceptions\"",
+                    "%install",
+                    "rm -rf ${RPM_BUILD_ROOT}",
+                    "%make_install",
+                    "",
+                    "chmod +x ${RPM_BUILD_ROOT}%{_prefix}/%{_lib}/lib*.so*",
+                ]
+            )
+        )
+        self.assertIn("%global scl devtoolset-14", rendered)
+        self.assertIn("BuildRequires: devtoolset-11-gcc", rendered)
+        self.assertIn("BuildRequires: devtoolset-11-gcc-c++", rendered)
+        self.assertIn("export CC=/opt/rh/devtoolset-11/root/usr/bin/gcc", rendered)
+        self.assertIn("export CXX=/opt/rh/devtoolset-11/root/usr/bin/g++", rendered)
+        self.assertIn("export PATH=%{_sourcedir}/builddeps/gettext-devel/usr/bin:$PATH", rendered)
+        self.assertIn("export gettext_datadir=%{_sourcedir}/builddeps/gettext-devel/usr/share/gettext", rendered)
+        self.assertIn('--disable-debuginfod', rendered)
+        self.assertNotIn("%package debuginfod-client", rendered)
+        self.assertNotIn("BuildRequires: pkgconfig(libmicrohttpd)", rendered)
+        self.assertNotIn("Source8: libdebuginfod.so", rendered)
+        self.assertIn("rm -f ${RPM_BUILD_ROOT}%{_bindir}/debuginfod-find", rendered)
+        self.assertIn("rm -f ${RPM_BUILD_ROOT}%{_libdir}/libdebuginfod*", rendered)
+        self.assertIn("%{?scl:%{?scl_package:%scl_package elfutils}}", rendered)
 
 
 if __name__ == "__main__":

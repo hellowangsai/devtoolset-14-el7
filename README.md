@@ -101,6 +101,19 @@ mixed-ABI static-library smoke:
 scripts/check_overlap_smoke.sh devtoolset-14 devtoolset-11
 ```
 
+To validate the `elfutils` toolchain pieces after the RPMs are built and
+installed:
+
+```bash
+make check-elfutils
+```
+
+Or run it directly:
+
+```bash
+scripts/check_elfutils_smoke.sh devtoolset-14
+```
+
 For in-tree verification before rebuilding RPMs, the script also supports
 overriding the nonshared archive and adding explicit compiler flags:
 

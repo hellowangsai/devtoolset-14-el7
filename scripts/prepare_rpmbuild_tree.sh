@@ -7,6 +7,8 @@ GENERATED_CORE_SPECS=${2:-"$ROOT_DIR/build/generated/CORE_SPECS"}
 GENERATED_META_SPECS=${3:-"$ROOT_DIR/build/generated/SPECS"}
 RPMBUILD_ROOT=${4:-"$ROOT_DIR/build/rpmbuild"}
 GENERATED_PATCHES_DIR=${5:-"$ROOT_DIR/build/generated/PATCHES"}
+EXTRA_EXTRACT_DIR=${6:-"$ROOT_DIR/vendor/extracted-extra"}
+LOCAL_BUILDDEPS_DIR=${7:-"$ROOT_DIR/vendor/builddeps"}
 
 mkdir -p \
   "$RPMBUILD_ROOT/BUILD" \
@@ -31,8 +33,9 @@ copy_specs() {
   done
 }
 
-copy_sources() {
-  if [[ ! -d "$EXTRACT_DIR" ]]; then
+copy_sources_from_dir() {
+  local src_dir=$1
+  if [[ ! -d "$src_dir" ]]; then
     return 0
   fi
 
@@ -45,10 +48,16 @@ copy_sources() {
         cp -f "$file" "$RPMBUILD_ROOT/SOURCES/"
         ;;
     esac
-  done < <(find "$EXTRACT_DIR" -type f -print0)
+  done < <(find "$src_dir" -type f -print0)
 }
 
-copy_sources
+copy_sources_from_dir "$EXTRACT_DIR"
+copy_sources_from_dir "$EXTRA_EXTRACT_DIR"
+
+if [[ -d "$LOCAL_BUILDDEPS_DIR" ]]; then
+  mkdir -p "$RPMBUILD_ROOT/SOURCES/builddeps"
+  cp -a "$LOCAL_BUILDDEPS_DIR"/. "$RPMBUILD_ROOT/SOURCES/builddeps/"
+fi
 copy_specs "$GENERATED_META_SPECS"
 copy_specs "$GENERATED_CORE_SPECS"
 

@@ -14,6 +14,7 @@ TARGET_BOOTSTRAP_TOOLSET = "devtoolset-11"
 UPSTREAM_PREFIX = "/opt/rh/{}/root".format(UPSTREAM_TOOLSET)
 TARGET_PREFIX = "/opt/rh/{}/root".format(TARGET_TOOLSET)
 TARGET_BOOTSTRAP_PREFIX = "/opt/rh/{}/root".format(TARGET_BOOTSTRAP_TOOLSET)
+TARGET_SCL_DEFINE = "%global scl {}\n".format(TARGET_TOOLSET)
 
 GCC_MACRO_BLOCK = """\
 %global devtoolset14_el7 1
@@ -52,6 +53,15 @@ def rewrite_generic(text):
     if "%set_build_flags" in text and SET_BUILD_FLAGS_FALLBACK not in text:
         text = SET_BUILD_FLAGS_FALLBACK + text
     return text
+
+
+def inject_scl_define(text):
+    if re.search(r"(?m)^%global scl\s+\S+", text):
+        return text
+    marker = re.search(r"(?m)^%\{\?scl:%\{\?scl_package:%scl_package [^}]+\}\}\n", text)
+    if marker:
+        return text[: marker.start()] + TARGET_SCL_DEFINE + text[marker.start() :]
+    return TARGET_SCL_DEFINE + text
 
 
 def inject_macros(text):
@@ -311,6 +321,139 @@ def rewrite_gcc(text):
     return text
 
 
+def rewrite_make(text):
+    text = rewrite_generic(text)
+    text = inject_scl_define(text)
+    text = text.replace(
+        "BuildRequires: gcc\n",
+        "BuildRequires: {}-gcc\n".format(TARGET_BOOTSTRAP_TOOLSET),
+        1,
+    )
+    build_marker = "%build\n"
+    if build_marker in text and BOOTSTRAP_ENV_BLOCK not in text:
+        text = text.replace(build_marker, build_marker + BOOTSTRAP_ENV_BLOCK + "\n", 1)
+    return text
+
+
+def rewrite_elfutils(text):
+    text = rewrite_generic(text)
+    text = inject_scl_define(text)
+    text = text.replace(
+        "BuildRequires: gcc-c++\n",
+        "BuildRequires: {}-gcc-c++\n".format(TARGET_BOOTSTRAP_TOOLSET),
+        1,
+    )
+    text = text.replace(
+        "BuildRequires: gcc\n",
+        "BuildRequires: {}-gcc\n".format(TARGET_BOOTSTRAP_TOOLSET),
+        1,
+    )
+    build_marker = "%build\n"
+    if build_marker in text and BOOTSTRAP_ENV_BLOCK not in text:
+        text = text.replace(build_marker, build_marker + BOOTSTRAP_ENV_BLOCK + "\n", 1)
+    prep_marker = "%prep\n%setup -q -n elfutils-%{version}\n"
+    prep_inject = (
+        "%prep\n%setup -q -n elfutils-%{version}\n\n"
+        "if ! command -v autopoint >/dev/null 2>&1 && [ -x %{_sourcedir}/builddeps/gettext-devel/usr/bin/autopoint ]; then\n"
+        "  export PATH=%{_sourcedir}/builddeps/gettext-devel/usr/bin:$PATH\n"
+        "  export gettext_datadir=%{_sourcedir}/builddeps/gettext-devel/usr/share/gettext\n"
+        "fi\n"
+    )
+    if prep_marker in text and "gettext_datadir=%{_sourcedir}/builddeps/gettext-devel/usr/share/gettext" not in text:
+        text = text.replace(prep_marker, prep_inject, 1)
+    for old in (
+        "Recommends: %{?scl_prefix}elfutils-debuginfod-client%{depsuffix} = %{version}-%{release}\n",
+        "Requires: %{?scl_prefix}elfutils-debuginfod-client%{depsuffix} = %{version}-%{release}\n",
+        "Recommends: %{?scl_prefix}elfutils-debuginfod-client-devel%{depsuffix} = %{version}-%{release}\n",
+        "Requires: %{?scl_prefix}elfutils-debuginfod-client-devel%{depsuffix} = %{version}-%{release}\n",
+        "Requires: pkgconfig(libcurl) >= 7.29.0\n",
+        "BuildRequires: pkgconfig(libmicrohttpd) >= 0.9.33\n",
+        "BuildRequires: pkgconfig(libcurl) >= 7.29.0\n",
+        "BuildRequires: pkgconfig(sqlite3) >= 3.7.17\n",
+        "BuildRequires: pkgconfig(libarchive) >= 3.1.2\n",
+        "BuildBuildRequires: pkgconfig(sqlite3) >= 3.7.17\n",
+        "Source8: libdebuginfod.so\n",
+        "Source9: libdebuginfod.a\n",
+        "# For debuginfod\n"
+        "BuildRequires: pkgconfig(libmicrohttpd) >= 0.9.33\n"
+        "BuildRequires: pkgconfig(libcurl) >= 7.29.0\n"
+        "BuildRequires: pkgconfig(sqlite3) >= 3.7.17\n"
+        "BuildRequires: pkgconfig(libarchive) >= 3.1.2\n\n",
+        "# For debuginfod\nBuild\n",
+        "Build\n",
+        "rm ${RPM_BUILD_ROOT}%{_sysconfdir}/profile.d/debuginfod.sh\n",
+        "rm ${RPM_BUILD_ROOT}%{_sysconfdir}/profile.d/debuginfod.csh\n",
+        "%ldconfig_scriptlets debuginfod-client\n",
+        "%post debuginfod-client -p /sbin/ldconfig\n",
+        "%postun debuginfod-client -p /sbin/ldconfig\n",
+    ):
+        text = text.replace(old, "")
+    text = text.replace(
+        '%configure CFLAGS="$RPM_OPT_FLAGS -fexceptions"',
+        '%configure CFLAGS="$RPM_OPT_FLAGS -fexceptions" --disable-debuginfod',
+        1,
+    )
+    debuginfod_cleanup = (
+        "chmod +x ${RPM_BUILD_ROOT}%{_prefix}/%{_lib}/lib*.so*\n"
+        "rm -f ${RPM_BUILD_ROOT}%{_sysconfdir}/profile.d/debuginfod.sh\n"
+        "rm -f ${RPM_BUILD_ROOT}%{_sysconfdir}/profile.d/debuginfod.csh\n"
+        "rm -f ${RPM_BUILD_ROOT}%{_bindir}/debuginfod-find\n"
+        "rm -f ${RPM_BUILD_ROOT}%{_libdir}/libdebuginfod*\n"
+        "rm -f ${RPM_BUILD_ROOT}%{_libdir}/pkgconfig/libdebuginfod.pc\n"
+        "rm -f ${RPM_BUILD_ROOT}%{_includedir}/elfutils/debuginfod.h\n"
+        "rm -f ${RPM_BUILD_ROOT}%{_mandir}/man1/debuginfod-find.1*\n"
+        "rm -f ${RPM_BUILD_ROOT}%{_mandir}/man3/debuginfod_*.3*\n"
+    )
+    text = text.replace(
+        "chmod +x ${RPM_BUILD_ROOT}%{_prefix}/%{_lib}/lib*.so*\n\n",
+        debuginfod_cleanup + "\n",
+        1,
+    )
+    text = text.replace(
+        "chmod +x ${RPM_BUILD_ROOT}%{_prefix}/%{_lib}/lib*.so*\n",
+        debuginfod_cleanup,
+        1,
+    )
+    text = text.replace(
+        "chmod +x ${RPM_BUILD_ROOT}%{_prefix}/%{_lib}/lib*.so*",
+        debuginfod_cleanup.rstrip("\n"),
+        1,
+    )
+    text = text.replace(
+        "ls -ls $RPM_BUILD_ROOT%{_libdir}/lib{elf,dw,asm,debuginfod}.so\n"
+        "rm -f $RPM_BUILD_ROOT%{_libdir}/lib{elf,dw,asm,debuginfod}.so\n"
+        "install -p -m 644 %{SOURCE2} %{SOURCE3} %{SOURCE4} \\\n"
+        "\t%{SOURCE5} %{SOURCE6} %{SOURCE7} %{SOURCE8} %{SOURCE9} \\\n"
+        "\t$RPM_BUILD_ROOT%{_libdir}/\n",
+        "ls -ls $RPM_BUILD_ROOT%{_libdir}/lib{elf,dw,asm}.so\n"
+        "rm -f $RPM_BUILD_ROOT%{_libdir}/lib{elf,dw,asm}.so\n"
+        "install -p -m 644 %{SOURCE2} %{SOURCE3} %{SOURCE4} \\\n"
+        "\t%{SOURCE5} %{SOURCE6} %{SOURCE7} \\\n"
+        "\t$RPM_BUILD_ROOT%{_libdir}/\n",
+        1,
+    )
+    text = re.sub(
+        r"\n%package debuginfod-client\n.*?\n%prep\n",
+        "\n%prep\n",
+        text,
+        flags=re.S,
+        count=1,
+    )
+    text = re.sub(
+        r"\n%files debuginfod-client\n.*$",
+        "\n",
+        text,
+        flags=re.S,
+        count=1,
+    )
+    text = re.sub(
+        r"%if 0%\{\?rhel\} >= 8 \|\| 0%\{\?fedora\} >= 20\n%else\n%endif\n",
+        "",
+        text,
+    )
+    return text
+
+
 def rewrite_binutils(text):
     text = rewrite_generic(text)
     for old, new in (
@@ -507,7 +650,7 @@ def rewrite_gdb(text):
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--kind", choices=("generic", "gcc", "binutils", "gdb"), default="generic"
+        "--kind", choices=("generic", "gcc", "binutils", "gdb", "make", "elfutils"), default="generic"
     )
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -520,6 +663,10 @@ def main(argv):
         rendered = rewrite_binutils(source)
     elif args.kind == "gdb":
         rendered = rewrite_gdb(source)
+    elif args.kind == "make":
+        rendered = rewrite_make(source)
+    elif args.kind == "elfutils":
+        rendered = rewrite_elfutils(source)
     else:
         rendered = rewrite_generic(source)
     args.output.parent.mkdir(parents=True, exist_ok=True)

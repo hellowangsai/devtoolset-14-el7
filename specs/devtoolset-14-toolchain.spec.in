@@ -7,6 +7,8 @@ BuildArch:      noarch
 Requires:       @TOOLSET@ = %{version}-%{release}
 Requires:       @TOOLSET@-runtime = %{version}-%{release}
 Requires:       @TOOLSET@-binutils
+Requires:       @TOOLSET@-elfutils
+Requires:       @TOOLSET@-make
 Requires:       @TOOLSET@-gcc
 Requires:       @TOOLSET@-gcc-c++
 Requires:       @TOOLSET@-gcc-gfortran

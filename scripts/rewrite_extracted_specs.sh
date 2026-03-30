@@ -4,8 +4,16 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 EXTRACT_DIR=${1:-"$ROOT_DIR/vendor/extracted"}
 OUT_DIR=${2:-"$ROOT_DIR/build/generated/SPECS"}
+EXTRA_EXTRACT_DIR=${3:-"$ROOT_DIR/vendor/extracted-extra"}
 
 mkdir -p "$OUT_DIR"
+
+SEARCH_DIRS=()
+for dir in "$EXTRACT_DIR" "$EXTRA_EXTRACT_DIR"; do
+  if [[ -d "$dir" ]]; then
+    SEARCH_DIRS+=("$dir")
+  fi
+done
 
 rewrite_one() {
   local kind=$1
@@ -19,14 +27,15 @@ rewrite_one() {
 }
 
 find_first_spec() {
-  local pattern
-  for pattern in "$@"; do
-    local found
-    found=$(find "$EXTRACT_DIR" -type f -name "$pattern" | sort | head -n 1)
-    if [[ -n "$found" ]]; then
-      printf '%s\n' "$found"
-      return 0
-    fi
+  local dir pattern found
+  for dir in "${SEARCH_DIRS[@]}"; do
+    for pattern in "$@"; do
+      found=$(find "$dir" -type f -name "$pattern" | sort | head -n 1)
+      if [[ -n "$found" ]]; then
+        printf '%s\n' "$found"
+        return 0
+      fi
+    done
   done
   return 0
 }
@@ -36,6 +45,8 @@ binutils_spec=$(find_first_spec "*gcc-toolset-14-binutils*.spec" "binutils.spec"
 gdb_spec=$(find_first_spec "*gcc-toolset-14-gdb*.spec" "gdb.spec")
 annobin_spec=$(find_first_spec "*gcc-toolset-14-annobin*.spec" "annobin.spec")
 dwz_spec=$(find_first_spec "*gcc-toolset-14-dwz*.spec" "dwz.spec")
+make_spec=$(find_first_spec "*devtoolset-11-make*.spec" "make.spec")
+elfutils_spec=$(find_first_spec "*devtoolset-11-elfutils*.spec" "elfutils.spec")
 
 if [[ -n "$gcc_spec" ]]; then
   rewrite_one gcc "$gcc_spec" "devtoolset-14-gcc.spec"
@@ -51,4 +62,10 @@ if [[ -n "$annobin_spec" ]]; then
 fi
 if [[ -n "$dwz_spec" ]]; then
   rewrite_one generic "$dwz_spec" "devtoolset-14-dwz.spec"
+fi
+if [[ -n "$make_spec" ]]; then
+  rewrite_one make "$make_spec" "devtoolset-14-make.spec"
+fi
+if [[ -n "$elfutils_spec" ]]; then
+  rewrite_one elfutils "$elfutils_spec" "devtoolset-14-elfutils.spec"
 fi
