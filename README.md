@@ -27,6 +27,7 @@ The implementation is intentionally split into two layers:
   - `devtoolset-14-toolchain`
 - a spec rewriter for upstream `gcc-toolset-14` specs
 - sanitizer smoke tests for `ASan` and `UBSan`
+- overlap smoke tests for locale, exceptions, futures, and thread primitives
 - a libstdc++ model verifier that enforces the `devtoolset-11`-style
   linker-script-plus-nonshared layout
 - a baseline analyzer for comparing CentOS 7 `devtoolset-8`,
@@ -84,6 +85,29 @@ To validate sanitizers after the RPMs are built and installed:
 
 ```bash
 scripts/check_sanitizers.sh devtoolset-14
+```
+
+To validate the main overlap-sensitive symbol families after the RPMs are built
+and installed:
+
+```bash
+make overlap-smoke
+```
+
+Or run it directly and override the legacy producer toolset used by the
+mixed-ABI static-library smoke:
+
+```bash
+scripts/check_overlap_smoke.sh devtoolset-14 devtoolset-11
+```
+
+For in-tree verification before rebuilding RPMs, the script also supports
+overriding the nonshared archive and adding explicit compiler flags:
+
+```bash
+EXTRA_CXXFLAGS='-D_GLIBCXX_USE_CXX11_ABI=0' \
+NONSHARED_ARCHIVE_OVERRIDE=build/rpmbuild/BUILD/gcc-*/obj-x86_64-redhat-linux/x86_64-redhat-linux/libstdc++-v3/src/.libs/libstdc++_nonshared48.a \
+scripts/check_overlap_smoke.sh devtoolset-14 devtoolset-11
 ```
 
 To produce a baseline report for `libstdc++_nonshared.a`:

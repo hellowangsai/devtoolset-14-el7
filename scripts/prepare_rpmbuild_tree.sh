@@ -49,8 +49,8 @@ copy_sources() {
 }
 
 copy_sources
-copy_specs "$GENERATED_CORE_SPECS"
 copy_specs "$GENERATED_META_SPECS"
+copy_specs "$GENERATED_CORE_SPECS"
 
 python3 "$ROOT_DIR/scripts/generate_gcc14_el7_libstdcxx_compat_patch.py" \
   --output "$GENERATED_PATCHES_DIR/gcc14-libstdc++-compat-el7.patch"

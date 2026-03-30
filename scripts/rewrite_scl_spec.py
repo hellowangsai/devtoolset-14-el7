@@ -95,6 +95,19 @@ def strip_libgccjit(text):
 
 
 def rewrite_gcc(text):
+    libcc1_relink_block = (
+        "echo '/* GNU ld script\n"
+        "   Use the shared library, but some functions are only in\n"
+        "   the static library, so try that secondarily.  */\n"
+        "%{oformat}\n"
+        "INPUT ( %{?scl:%{_root_prefix}}%{!?scl:%{_prefix}}/%{_lib}/libstdc++.so.6 -lstdc++_nonshared%{nonsharedver} )' \\\n"
+        "  > %{gcc_target_platform}/libstdc++-v3/src/.libs/libstdc++_system.so\n\n"
+        "# Relink libcc1 against -lstdc++_nonshared:\n"
+        "sed -i -e '/^postdeps/s/-lstdc++/-lstdc++_system/' libcc1/libtool\n"
+        "rm -f libcc1/libcc1.la\n"
+        "make -C libcc1 libcc1.la\n\n"
+    )
+
     def force_macro(name, value):
         pattern = r"(?m)^%global {} [01]$".format(re.escape(name))
         return lambda data: re.sub(pattern, "%global {} {}".format(name, value), data)
@@ -105,6 +118,10 @@ def rewrite_gcc(text):
         r"--enable-languages=[^\s\\]+",
         "--enable-languages=%{devtoolset14_languages}",
         text,
+    )
+    text = text.replace(
+        "--enable-shared --enable-threads=posix --enable-checking=release \\",
+        "--enable-shared --enable-threads=posix --enable-checking=release \\\n\t--with-default-libstdcxx-abi=gcc4-compatible \\",
     )
     text = text.replace("--enable-multilib", "--disable-multilib")
     text = re.sub(
@@ -132,13 +149,109 @@ def rewrite_gcc(text):
         "%ifarch %{multilib_64_archs}\n# Ensure glibc{,-devel} is installed for both multilib arches\nBuildRequires: /lib/libc.so.6 /usr/lib/libc.so /lib64/libc.so.6 /usr/lib64/libc.so\n%endif\n",
         "",
     )
+    text = re.sub(
+        r"\n%ifarch %\{multilib_64_archs\}\nln -sf /lib/libgcc_s\.so\.1 \$FULLPATH/32/libgcc_s\.so\n%endif\n",
+        "\n",
+        text,
+    )
+    text = re.sub(
+        r"\n%ifarch %\{multilib_64_archs\}\nrm -f \$FULLPATH/32/libgcc_s\.so\necho '/\* GNU ld script\n   Use the shared library, but some functions are only in\n   the static library, so try that secondarily\.  \*/\n%\{oformat2\}\nGROUP \( /lib/libgcc_s\.so\.1 libgcc\.a \)' > \$FULLPATH/32/libgcc_s\.so\n%endif\n",
+        "\n",
+        text,
+    )
+    text = re.sub(
+        r"(?m)^%\{_prefix\}/lib/gcc/%\{gcc_target_platform\}/%\{gcc_major\}/32/libgcc_s\.so\n?",
+        "",
+        text,
+    )
     text = text.replace(
         "Requires: libubsan%{_isa} >= 8.3.1",
         "Requires: libubsan1%{_isa} >= 8.3.1",
     )
     text = text.replace(
+        "%package gfortran\n"
+        "Summary: Fortran support for GCC %{gcc_major}\n"
+        "Requires: %{?scl_prefix}gcc%{!?scl:13} = %{version}-%{release}\n"
+        "Requires: libgfortran >= 8.1.1\n",
+        "%package gfortran\n"
+        "Summary: Fortran support for GCC %{gcc_major}\n"
+        "Requires: %{?scl_prefix}gcc%{!?scl:13} = %{version}-%{release}\n"
+        "%if 0%{?rhel} > 7\n"
+        "Requires: libgfortran >= 8.1.1\n"
+        "%else\n"
+        "Requires: libgfortran5 >= 8.1.1\n"
+        "%endif\n",
+        1,
+    )
+    text = text.replace(
         "%install\nrm -rf %{buildroot}\nmkdir -p %{buildroot}\n",
         "%install\nrm -rf %{buildroot}\nmkdir -p %{buildroot}\nmkdir -p %{buildroot}%{_docdir}\n",
+        1,
+    )
+    text = text.replace(
+        "rm -f %{buildroot}%{_prefix}/%{_lib}/libssp*\n"
+        "rm -f %{buildroot}%{_prefix}/%{_lib}/libvtv* || :\n",
+        "rm -f %{buildroot}%{_prefix}/%{_lib}/libssp*\n"
+        "rm -f %{buildroot}%{_prefix}/%{_lib}/libvtv* || :\n"
+        "rm -f %{buildroot}%{_prefix}/%{_lib}/libhwasan* || :\n"
+        "rm -f $FULLPATH/libhwasan* || :\n"
+        "rm -f %{buildroot}%{_prefix}/%{_lib}/libgcc_s.so || :\n"
+        "rm -f %{buildroot}%{_infodir}/libgomp.info* %{buildroot}%{_infodir}/libitm.info* %{buildroot}%{_infodir}/libquadmath.info* || :\n"
+        "rm -f %{buildroot}%{_mandir}/man7/fsf-funding.7* %{buildroot}%{_mandir}/man7/gfdl.7* %{buildroot}%{_mandir}/man7/gpl.7* || :\n"
+        "rm -rf %{buildroot}%{_prefix}/share/locale || :\n",
+        1,
+    )
+    text = text.replace(
+        "%{_prefix}/bin/gcc-ar\n%{_prefix}/bin/gcc-nm\n%{_prefix}/bin/gcc-ranlib\n",
+        "%{_prefix}/bin/gcc-ar\n%{_prefix}/bin/gcc-nm\n%{_prefix}/bin/gcc-ranlib\n"
+        "%{_prefix}/bin/%{gcc_target_platform}-gcc-ar\n"
+        "%{_prefix}/bin/%{gcc_target_platform}-gcc-nm\n"
+        "%{_prefix}/bin/%{gcc_target_platform}-gcc-ranlib\n",
+        1,
+    )
+    text = re.sub(
+        r"\n%if 0\n(%files gdb-plugin\n(?:.*\n)*?)%endif\n",
+        r"\n\1",
+        text,
+        count=1,
+    )
+    text = text.replace(
+        "%{_prefix}/libexec/gcc/%{gcc_target_platform}/%{gcc_major}/cc1\n"
+        "%{_prefix}/libexec/gcc/%{gcc_target_platform}/%{gcc_major}/collect2\n",
+        "%{_prefix}/libexec/gcc/%{gcc_target_platform}/%{gcc_major}/cc1\n"
+        "%{_prefix}/libexec/gcc/%{gcc_target_platform}/%{gcc_major}/collect2\n"
+        "%{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/include-fixed\n"
+        "%{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/install-tools\n"
+        "%{_prefix}/libexec/gcc/%{gcc_target_platform}/%{gcc_major}/install-tools\n",
+        1,
+    )
+    text = text.replace(
+        "%doc rpm.doc/changelogs/libstdc++-v3/ChangeLog* libstdc++-v3/README*\n",
+        "%doc rpm.doc/changelogs/libstdc++-v3/ChangeLog* libstdc++-v3/README*\n"
+        "%{_datadir}/gcc-%{gcc_major}/python/libstdcxx\n"
+        "%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib}/libstdc++*gdb.py*\n",
+        1,
+    )
+    text = text.replace(libcc1_relink_block + "# Test the nonshared bits.\n", "# Test the nonshared bits.\n")
+    text = text.replace(
+        "%ifarch sparc sparcv9 sparc64\n"
+        "make %{?_smp_mflags} BOOT_CFLAGS=\"$OPT_FLAGS\" LDFLAGS_FOR_TARGET=-Wl,-z,relro,-z,now bootstrap\n"
+        "%else\n"
+        "make %{?_smp_mflags} BOOT_CFLAGS=\"$OPT_FLAGS\" LDFLAGS_FOR_TARGET=-Wl,-z,relro,-z,now profiledbootstrap\n"
+        "%endif\n\n",
+        "%ifarch sparc sparcv9 sparc64\n"
+        "make %{?_smp_mflags} BOOT_CFLAGS=\"$OPT_FLAGS\" LDFLAGS_FOR_TARGET=-Wl,-z,relro,-z,now bootstrap\n"
+        "%else\n"
+        "make %{?_smp_mflags} BOOT_CFLAGS=\"$OPT_FLAGS\" LDFLAGS_FOR_TARGET=-Wl,-z,relro,-z,now profiledbootstrap\n"
+        "%endif\n\n"
+        + libcc1_relink_block,
+        1,
+    )
+    text = text.replace(
+        "mkdir -p rpm.doc/changelogs/{gcc/cp,gcc/jit,libstdc++-v3,libgomp,libatomic,libsanitizer}\n\n"
+        "for i in {gcc,gcc/cp,gcc/jit,libstdc++-v3,libgomp,libatomic,libsanitizer}/ChangeLog*; do\n",
+        "mkdir -p rpm.doc/changelogs/{gcc/cp,gcc/jit,libstdc++-v3,libgomp,libcc1,libatomic,libsanitizer}\n\n"
+        "for i in {gcc,gcc/cp,gcc/jit,libstdc++-v3,libgomp,libcc1,libatomic,libsanitizer}/ChangeLog*; do\n",
         1,
     )
     text = text.replace(
@@ -206,6 +319,8 @@ def rewrite_binutils(text):
         "%define alternatives_cmd     /usr/sbin/alternatives\n"
         "%define alternatives_cmdline %{alternatives_cmd}%{?scl: --altdir %{_sysconfdir}/alternatives --admindir %{_scl_root}/var/lib/alternatives}\n",
     )
+    text = text.replace("%ldconfig_post\n", "/sbin/ldconfig\n")
+    text = text.replace("%ldconfig_postun\n", "/sbin/ldconfig\n")
     return text
 
 

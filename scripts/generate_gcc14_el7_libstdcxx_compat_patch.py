@@ -410,6 +410,12 @@ CONTENT_REWRITES = {
     REL_SRC / "nonshared11/random48.cc": (
         ('#include "random.cc"', '#include "../c++11/random.cc"'),
     ),
+    REL_SRC / "nonshared11/cxx11-ios_failure.cc": (
+        (
+            '#include "../c++11/cxx11-ios_failure.cc"',
+            '#define _GLIBCXX_NONSHARED_CXX11_EL7\n#include "../c++11/cxx11-ios_failure.cc"',
+        ),
+    ),
     REL_SRC / "nonshared11/future48.cc": (
         (
             '#define _GLIBCXX_NONSHARED_CXX11_48\n'
@@ -577,6 +583,107 @@ CONTENT_REWRITES = {
             '#endif\n',
         ),
     ),
+    Path("libstdc++-v3/include/Makefile.am"): (
+        (
+            'if ENABLE_CXX11_ABI\n'
+            'stamp-cxx11-abi:\n'
+            '\techo 1 > stamp-cxx11-abi\n'
+            'else\n'
+            'stamp-cxx11-abi:\n'
+            '\techo 0 > stamp-cxx11-abi\n'
+            'endif\n',
+            'if ENABLE_CXX11_ABI\n'
+            'stamp-cxx11-abi:\n'
+            '\techo 0 > stamp-cxx11-abi\n'
+            'else\n'
+            'stamp-cxx11-abi:\n'
+            '\techo 0 > stamp-cxx11-abi\n'
+            'endif\n',
+        ),
+    ),
+    Path("libstdc++-v3/include/Makefile.in"): (
+        (
+            '@ENABLE_CXX11_ABI_TRUE@stamp-cxx11-abi:\n'
+            '@ENABLE_CXX11_ABI_TRUE@\techo 1 > stamp-cxx11-abi\n'
+            '@ENABLE_CXX11_ABI_FALSE@stamp-cxx11-abi:\n'
+            '@ENABLE_CXX11_ABI_FALSE@\techo 0 > stamp-cxx11-abi\n',
+            '@ENABLE_CXX11_ABI_TRUE@stamp-cxx11-abi:\n'
+            '@ENABLE_CXX11_ABI_TRUE@\techo 0 > stamp-cxx11-abi\n'
+            '@ENABLE_CXX11_ABI_FALSE@stamp-cxx11-abi:\n'
+            '@ENABLE_CXX11_ABI_FALSE@\techo 0 > stamp-cxx11-abi\n',
+        ),
+    ),
+    REL_SRC / "c++11/cxx11-ios_failure.cc": (
+        (
+            '#if ! _GLIBCXX_USE_DUAL_ABI\n'
+            '# error This file should not be compiled for this configuration.\n'
+            '#endif\n'
+            '\n'
+            'namespace std _GLIBCXX_VISIBILITY(default)\n'
+            '{\n'
+            '_GLIBCXX_BEGIN_NAMESPACE_VERSION\n',
+            '#if ! _GLIBCXX_USE_DUAL_ABI\n'
+            '# error This file should not be compiled for this configuration.\n'
+            '#endif\n'
+            '\n'
+            '#ifdef _GLIBCXX_NONSHARED_CXX11_EL7\n'
+            'namespace\n'
+            '{\n'
+            '  struct io_error_category final : std::error_category\n'
+            '  {\n'
+            '    const char*\n'
+            '    name() const noexcept final\n'
+            '    { return "iostream"; }\n'
+            '\n'
+            '    _GLIBCXX_DEFAULT_ABI_TAG\n'
+            '    std::string\n'
+            '    message(int __ec) const final\n'
+            '    {\n'
+            '      switch (std::io_errc(__ec))\n'
+            '      {\n'
+            '      case std::io_errc::stream:\n'
+            '        return "iostream error";\n'
+            '      default:\n'
+            '        return "Unknown error";\n'
+            '      }\n'
+            '    }\n'
+            '  };\n'
+            '\n'
+            '  const std::error_category&\n'
+            '  __io_category_instance() noexcept\n'
+            '  {\n'
+            '    static io_error_category __cat;\n'
+            '    return __cat;\n'
+            '  }\n'
+            '} // namespace\n'
+            '#endif\n'
+            '\n'
+            'namespace std _GLIBCXX_VISIBILITY(default)\n'
+            '{\n'
+            '_GLIBCXX_BEGIN_NAMESPACE_VERSION\n'
+            '\n'
+            '#ifdef _GLIBCXX_NONSHARED_CXX11_EL7\n'
+            '  const error_category&\n'
+            '  iostream_category() noexcept\n'
+            '  { return __io_category_instance(); }\n'
+            '#endif\n',
+        ),
+        (
+            '  ios_base::failure::failure(const char* __str, const error_code& __ec)\n'
+            '  : system_error(__ec, __str) { }\n',
+            '  ios_base::failure::failure(const char* __str, const error_code& __ec)\n'
+            '  : system_error(__ec, std::string(__str)) { }\n',
+        ),
+        (
+            '    __ios_failure(const char* s) : failure(s)\n',
+            '    __ios_failure(const char* s) : failure(std::string(s))\n',
+        ),
+        (
+            '    __ios_failure(const char* s, const error_code& e) : failure(s, e)\n',
+            '    __ios_failure(const char* s, const error_code& e)\n'
+            '    : failure(std::string(s), e)\n',
+        ),
+    ),
     REL_SRC / "c++11/condition_variable.cc": (
         (
             '  void\n'
@@ -697,6 +804,72 @@ CONTENT_REWRITES = {
         ),
     ),
     REL_SRC / "c++11/thread.cc": (
+        (
+            '  thread::_State::~_State() = default;\n'
+            '\n'
+            '  void\n'
+            '  thread::join()\n'
+            '  {\n',
+            '  thread::_State::~_State() = default;\n'
+            '\n'
+            '#ifndef _GLIBCXX_NONSHARED_CXX11_44\n'
+            '  void\n'
+            '  thread::join()\n'
+            '  {\n',
+        ),
+        (
+            '    _M_id = id();\n'
+            '  }\n'
+            '\n'
+            '  void\n'
+            '  thread::detach()\n'
+            '  {\n',
+            '    _M_id = id();\n'
+            '  }\n'
+            '#endif\n'
+            '\n'
+            '#ifndef _GLIBCXX_NONSHARED_CXX11_44\n'
+            '  void\n'
+            '  thread::detach()\n'
+            '  {\n',
+        ),
+        (
+            '    _M_id = id();\n'
+            '  }\n'
+            '\n'
+            '  void\n'
+            '  thread::_M_start_thread(_State_ptr state, void (*depend)())\n',
+            '    _M_id = id();\n'
+            '  }\n'
+            '#endif\n'
+            '\n'
+            '  void\n'
+            '  thread::_M_start_thread(_State_ptr state, void (*depend)())\n',
+        ),
+        (
+            '#if _GLIBCXX_THREAD_ABI_COMPAT\n'
+            '  void\n'
+            '  thread::_M_start_thread(__shared_base_type __b)\n'
+            '  {\n',
+            '#if _GLIBCXX_THREAD_ABI_COMPAT\n'
+            '#ifndef _GLIBCXX_NONSHARED_CXX11_44\n'
+            '  void\n'
+            '  thread::_M_start_thread(__shared_base_type __b)\n'
+            '  {\n',
+        ),
+        (
+            '    _M_start_thread(std::move(__b), nullptr);\n'
+            '  }\n'
+            '\n'
+            '  void\n'
+            '  thread::_M_start_thread(__shared_base_type __b, void (*depend)())\n',
+            '    _M_start_thread(std::move(__b), nullptr);\n'
+            '  }\n'
+            '#endif\n'
+            '\n'
+            '  void\n'
+            '  thread::_M_start_thread(__shared_base_type __b, void (*depend)())\n',
+        ),
         (
             '  unsigned int\n'
             '  thread::hardware_concurrency() noexcept\n'
@@ -1094,6 +1267,8 @@ def build_overlay_tree(gcc14_tarball, gcc14_patch, dts11_patch):
         run(["autoreconf", "-fi"], cwd=target_root / "libstdc++-v3")
 
         tracked = dedupe_paths([
+            Path("libstdc++-v3/include/Makefile.am"),
+            Path("libstdc++-v3/include/Makefile.in"),
             REL_SRC / "Makefile.am",
             REL_SRC / "Makefile.in",
             REL_SRC / "nonshared98/Makefile.am",

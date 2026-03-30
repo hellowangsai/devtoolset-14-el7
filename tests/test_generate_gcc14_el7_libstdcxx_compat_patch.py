@@ -372,6 +372,38 @@ class GenerateEl7CompatPatchTest(unittest.TestCase):
             Path("libstdc++-v3/src/c++11/thread.cc"),
             "\n".join(
                 [
+                    '  thread::_State::~_State() = default;',
+                    '',
+                    '  void',
+                    '  thread::join()',
+                    '  {',
+                    '    _M_id = id();',
+                    '  }',
+                    '',
+                    '  void',
+                    '  thread::detach()',
+                    '  {',
+                    '    _M_id = id();',
+                    '  }',
+                    '',
+                    '  void',
+                    '  thread::_M_start_thread(_State_ptr state, void (*depend)())',
+                    '  {',
+                    '  }',
+                    '',
+                    '#if _GLIBCXX_THREAD_ABI_COMPAT',
+                    '  void',
+                    '  thread::_M_start_thread(__shared_base_type __b)',
+                    '  {',
+                    '    _M_start_thread(std::move(__b), nullptr);',
+                    '  }',
+                    '',
+                    '  void',
+                    '  thread::_M_start_thread(__shared_base_type __b, void (*depend)())',
+                    '  {',
+                    '  }',
+                    '#endif',
+                    '',
                     '  unsigned int',
                     '  thread::hardware_concurrency() noexcept',
                     '  {',
@@ -398,6 +430,9 @@ class GenerateEl7CompatPatchTest(unittest.TestCase):
         self.assertIn('#ifndef _GLIBCXX_NONSHARED_CXX11_48\n  unsigned int\n  thread::hardware_concurrency() noexcept', thread)
         self.assertIn('namespace this_thread\n{\n#ifndef _GLIBCXX_NONSHARED_CXX11_48\n  void\n  __sleep_for', thread)
         self.assertIn('#endif\n  }\n#endif\n}\n_GLIBCXX_END_NAMESPACE_VERSION', thread)
+        self.assertIn('#ifndef _GLIBCXX_NONSHARED_CXX11_44\n  void\n  thread::join()', thread)
+        self.assertIn('#ifndef _GLIBCXX_NONSHARED_CXX11_44\n  void\n  thread::detach()', thread)
+        self.assertIn('#if _GLIBCXX_THREAD_ABI_COMPAT\n#ifndef _GLIBCXX_NONSHARED_CXX11_44\n  void\n  thread::_M_start_thread(__shared_base_type __b)', thread)
 
     def test_rewrite_source_content_drops_condition_variable_wait_from_nonshared(self):
         rewritten = rewrite_source_content(
@@ -418,6 +453,72 @@ class GenerateEl7CompatPatchTest(unittest.TestCase):
         )
         self.assertNotIn('condition_variable::wait(unique_lock<mutex>& __lock)', rewritten)
         self.assertIn('#ifndef _GLIBCXX_NONSHARED_CXX11\n  void\n  condition_variable::notify_one() noexcept', rewritten)
+
+    def test_rewrite_source_content_injects_iostream_category_for_nonshared_ios_failure(self):
+        rewritten = rewrite_source_content(
+            Path("libstdc++-v3/src/c++11/cxx11-ios_failure.cc"),
+            '\n'.join(
+                [
+                    '#if ! _GLIBCXX_USE_DUAL_ABI',
+                    '# error This file should not be compiled for this configuration.',
+                    '#endif',
+                    '',
+                    'namespace std _GLIBCXX_VISIBILITY(default)',
+                    '{',
+                    '_GLIBCXX_BEGIN_NAMESPACE_VERSION',
+                    '',
+                    '  ios_base::failure::failure(const char* __str, const error_code& __ec)',
+                    '  : system_error(__ec, __str) { }',
+                    '',
+                    '  ios_base::failure::failure(const string& __str)',
+                    '  : system_error(io_errc::stream, __str) { }',
+                    '',
+                    '    __ios_failure(const char* s) : failure(s)',
+                    '    { __construct_ios_failure(buf, runtime_error::what()); }',
+                    '',
+                    '    __ios_failure(const char* s, const error_code& e) : failure(s, e)',
+                    '    { __construct_ios_failure(buf, runtime_error::what()); }',
+                ]
+            ) + '\n',
+        )
+        self.assertIn('#ifdef _GLIBCXX_NONSHARED_CXX11_EL7\nnamespace\n{', rewritten)
+        self.assertIn('struct io_error_category final : std::error_category', rewritten)
+        self.assertIn('const error_category&\n  iostream_category() noexcept', rewritten)
+        self.assertIn('ios_base::failure::failure(const char* __str, const error_code& __ec)\n  : system_error(__ec, std::string(__str))', rewritten)
+        self.assertIn('__ios_failure(const char* s) : failure(std::string(s))', rewritten)
+        self.assertIn(': failure(std::string(s), e)', rewritten)
+
+    def test_rewrite_source_content_marks_el7_nonshared_ios_failure_overlay(self):
+        rewritten = rewrite_source_content(
+            Path("libstdc++-v3/src/nonshared11/cxx11-ios_failure.cc"),
+            '#include "../c++11/cxx11-ios_failure.cc"\n',
+        )
+        self.assertIn(
+            '#define _GLIBCXX_NONSHARED_CXX11_EL7\n#include "../c++11/cxx11-ios_failure.cc"',
+            rewritten,
+        )
+
+    def test_rewrite_source_content_forces_old_abi_in_installed_cxxconfig(self):
+        rewritten = rewrite_source_content(
+            Path("libstdc++-v3/include/Makefile.am"),
+            'if ENABLE_CXX11_ABI\n'
+            'stamp-cxx11-abi:\n'
+            '\techo 1 > stamp-cxx11-abi\n'
+            'else\n'
+            'stamp-cxx11-abi:\n'
+            '\techo 0 > stamp-cxx11-abi\n'
+            'endif\n',
+        )
+        self.assertIn(
+            'if ENABLE_CXX11_ABI\n'
+            'stamp-cxx11-abi:\n'
+            '\techo 0 > stamp-cxx11-abi\n'
+            'else\n'
+            'stamp-cxx11-abi:\n'
+            '\techo 0 > stamp-cxx11-abi\n'
+            'endif\n',
+            rewritten,
+        )
 
     def test_rewrite_source_content_comments_el8_hidden_symbols_for_el7_fs_ops(self):
         rewritten = rewrite_source_content(

@@ -9,7 +9,7 @@ CENTOS7_RPM_DIR := $(ROOT)/vendor/rpms-centos7
 ROCKY8_RPM_DIR := $(ROOT)/vendor/rpms-rocky8
 ANALYSIS_DIR := $(BUILD_DIR)/analysis
 
-.PHONY: sources extract render-scl rewrite-fixtures stage-rpmbuild verify-bootstrap verify-libstdcxx generate-el7-libstdcxx-patch sync-el7-libstdcxx-overlay quick-libstdcxx-check quick-libstdcxx-check-refresh check-buildreqs download-centos7-source download-centos7-libstdcxx download-rocky8-libstdcxx extract-centos7-source extract-centos7-libstdcxx extract-rocky8-libstdcxx analyze-libstdcxx test check-sh clean
+.PHONY: sources extract render-scl rewrite-fixtures stage-rpmbuild verify-bootstrap verify-libstdcxx generate-el7-libstdcxx-patch sync-el7-libstdcxx-overlay quick-libstdcxx-check quick-libstdcxx-check-refresh overlap-smoke check-buildreqs download-centos7-source download-centos7-libstdcxx download-rocky8-libstdcxx extract-centos7-source extract-centos7-libstdcxx extract-rocky8-libstdcxx analyze-libstdcxx test check-sh clean
 
 sources:
 	$(ROOT)/scripts/download_rocky_sources.sh $(SRPM_DIR)
@@ -56,6 +56,9 @@ quick-libstdcxx-check:
 
 quick-libstdcxx-check-refresh:
 	$(ROOT)/scripts/check_libstdcxx_nonshared_build.sh --refresh-overlay
+
+overlap-smoke:
+	$(ROOT)/scripts/check_overlap_smoke.sh
 
 check-buildreqs:
 	$(ROOT)/scripts/check_build_prereqs.sh
@@ -106,6 +109,7 @@ check-sh:
 	bash -n $(ROOT)/scripts/verify_bootstrap_toolchain.sh
 	bash -n $(ROOT)/scripts/verify_libstdcxx_model.sh
 	bash -n $(ROOT)/scripts/check_sanitizers.sh
+	bash -n $(ROOT)/scripts/check_overlap_smoke.sh
 	bash -n $(ROOT)/scripts/check_build_prereqs.sh
 	bash -n $(ROOT)/scripts/check_libstdcxx_nonshared_build.sh
 	bash -n $(ROOT)/scripts/download_yum_repo_packages.sh
