@@ -198,6 +198,10 @@ def rewrite_gcc(text):
         "rm -f %{buildroot}%{_prefix}/%{_lib}/libgcc_s.so || :\n"
         "rm -f %{buildroot}%{_infodir}/libgomp.info* %{buildroot}%{_infodir}/libitm.info* %{buildroot}%{_infodir}/libquadmath.info* || :\n"
         "rm -f %{buildroot}%{_mandir}/man7/fsf-funding.7* %{buildroot}%{_mandir}/man7/gfdl.7* %{buildroot}%{_mandir}/man7/gpl.7* || :\n"
+        "rm -rf %{buildroot}%{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/include/ssp || :\n"
+        "rm -f %{buildroot}%{_prefix}/libexec/getconf/default || :\n"
+        "rm -f %{buildroot}%{_root_prefix}/%{_lib}/libitm.so.1* %{buildroot}%{_root_prefix}/%{_lib}/libatomic.so.1* || :\n"
+        "find %{buildroot}%{_prefix}/share/gcc-%{gcc_major}/python %{buildroot}%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib} -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || :\n"
         "rm -rf %{buildroot}%{_prefix}/share/locale || :\n",
         1,
     )
@@ -229,7 +233,24 @@ def rewrite_gcc(text):
         "%doc rpm.doc/changelogs/libstdc++-v3/ChangeLog* libstdc++-v3/README*\n",
         "%doc rpm.doc/changelogs/libstdc++-v3/ChangeLog* libstdc++-v3/README*\n"
         "%{_datadir}/gcc-%{gcc_major}/python/libstdcxx\n"
-        "%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib}/libstdc++*gdb.py*\n",
+        "%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib}/libstdc++*gdb.py*\n"
+        "%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib}/__pycache__/libstdc++*gdb*.pyc\n",
+        1,
+    )
+    text = text.replace(
+        "for f in `find %{buildroot}%{_prefix}/share/gcc-%{gcc_major}/python/ \\\n"
+        "\t       %{buildroot}%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib}/ -name \\*.py`; do\n"
+        "  r=${f/$RPM_BUILD_ROOT/}\n"
+        "  %{__python3} -c 'import py_compile; py_compile.compile(\"'$f'\", dfile=\"'$r'\")'\n"
+        "  %{__python3} -O -c 'import py_compile; py_compile.compile(\"'$f'\", dfile=\"'$r'\")'\n"
+        "done\n\n",
+        "for f in `find %{buildroot}%{_prefix}/share/gcc-%{gcc_major}/python/ \\\n"
+        "\t       %{buildroot}%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib}/ -name \\*.py`; do\n"
+        "  r=${f/$RPM_BUILD_ROOT/}\n"
+        "  %{__python3} -c 'import py_compile; py_compile.compile(\"'$f'\", dfile=\"'$r'\")'\n"
+        "  %{__python3} -O -c 'import py_compile; py_compile.compile(\"'$f'\", dfile=\"'$r'\")'\n"
+        "done\n"
+        "find %{buildroot}%{_prefix}/share/gcc-%{gcc_major}/python %{buildroot}%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib} -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || :\n\n",
         1,
     )
     text = text.replace(libcc1_relink_block + "# Test the nonshared bits.\n", "# Test the nonshared bits.\n")

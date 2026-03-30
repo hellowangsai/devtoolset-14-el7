@@ -148,6 +148,11 @@ class RewriteSpecTest(unittest.TestCase):
         self.assertIn("rm -f %{buildroot}%{_prefix}/%{_lib}/libgcc_s.so || :", rendered)
         self.assertIn("%{buildroot}%{_infodir}/libgomp.info*", rendered)
         self.assertIn("%{buildroot}%{_mandir}/man7/fsf-funding.7*", rendered)
+        self.assertIn("%{buildroot}%{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/include/ssp", rendered)
+        self.assertIn("%{buildroot}%{_prefix}/libexec/getconf/default", rendered)
+        self.assertIn("%{buildroot}%{_root_prefix}/%{_lib}/libitm.so.1*", rendered)
+        self.assertIn("%{buildroot}%{_root_prefix}/%{_lib}/libatomic.so.1*", rendered)
+        self.assertIn("find %{buildroot}%{_prefix}/share/gcc-%{gcc_major}/python %{buildroot}%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib} -name __pycache__", rendered)
         self.assertIn("rm -rf %{buildroot}%{_prefix}/share/locale || :", rendered)
 
     def test_gcc_rewrite_packages_include_fixed_and_install_tools(self):
@@ -165,6 +170,21 @@ class RewriteSpecTest(unittest.TestCase):
         )
         self.assertIn("%{_datadir}/gcc-%{gcc_major}/python/libstdcxx", rendered)
         self.assertIn("%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib}/libstdc++*gdb.py*", rendered)
+        self.assertIn("%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib}/__pycache__/libstdc++*gdb*.pyc", rendered)
+
+    def test_gcc_rewrite_cleans_python_bytecode_caches_after_pretty_printers(self):
+        rendered = rewrite_gcc(
+            "for f in `find %{buildroot}%{_prefix}/share/gcc-%{gcc_major}/python/ \\\n"
+            "\t       %{buildroot}%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib}/ -name \\*.py`; do\n"
+            "  r=${f/$RPM_BUILD_ROOT/}\n"
+            "  %{__python3} -c 'import py_compile; py_compile.compile(\"'$f'\", dfile=\"'$r'\")'\n"
+            "  %{__python3} -O -c 'import py_compile; py_compile.compile(\"'$f'\", dfile=\"'$r'\")'\n"
+            "done\n\n"
+        )
+        self.assertIn(
+            "find %{buildroot}%{_prefix}/share/gcc-%{gcc_major}/python %{buildroot}%{_datadir}/gdb/auto-load/%{_prefix}/%{_lib} -name __pycache__",
+            rendered,
+        )
 
     def test_gcc_rewrite_does_not_add_libitm_or_libatomic_runtime_packages(self):
         rendered = rewrite_gcc(
